@@ -1,0 +1,182 @@
+<template>
+  <div class="history-container">
+    <h1 class="page-title">检测历史</h1>
+    
+    <el-card shadow="hover">
+      <template #header>
+        <div class="card-header">
+          <h3>历史记录</h3>
+          <el-button @click="loadTasks" :loading="loading" :icon="Refresh">
+            刷新
+          </el-button>
+        </div>
+      </template>
+
+      <div v-if="tasks.length > 0" class="tasks-table">
+        <el-table :data="tasks" style="width: 100%" stripe>
+          <el-table-column prop="task_id" label="任务ID" width="180">
+            <template #default="scope">
+              <code class="task-id">{{ scope.row.task_id.slice(0, 8) }}...</code>
+            </template>
+          </el-table-column>
+          
+          <el-table-column label="文件" min-width="200">
+            <template #default="scope">
+              <div class="file-names">
+                <p>{{ scope.row.file1_name }}</p>
+                <p>{{ scope.row.file2_name }}</p>
+              </div>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="status" label="状态" width="120">
+            <template #default="scope">
+              <el-tag :type="getStatusType(scope.row.status)">
+                {{ getStatusText(scope.row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="similarity_score" label="相似度" width="120">
+            <template #default="scope">
+              <span v-if="scope.row.similarity_score !== null">
+                {{ Math.round(scope.row.similarity_score * 100) }}%
+              </span>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="created_at" label="创建时间" width="180">
+            <template #default="scope">
+              {{ formatTime(scope.row.created_at) }}
+            </template>
+          </el-table-column>
+          
+          <el-table-column label="操作" width="120">
+            <template #default="scope">
+              <el-button 
+                type="primary" 
+                size="small" 
+                @click="viewTask(scope.row.task_id)"
+                text
+              >
+                查看详情
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <div v-else-if="!loading" class="empty-state">
+        <el-empty description="暂无检测记录">
+          <el-button type="primary" @click="$router.push('/')">
+            开始检测
+          </el-button>
+        </el-empty>
+      </div>
+
+      <div v-if="loading" class="loading-state">
+        <el-skeleton :rows="5" animated />
+      </div>
+    </el-card>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { Refresh } from '@element-plus/icons-vue'
+import type { TaskStatus } from '../api'
+
+const router = useRouter()
+const loading = ref(false)
+const tasks = ref<TaskStatus[]>([])
+
+const getStatusType = (status: string) => {
+  const types = {
+    pending: 'info',
+    processing: 'warning', 
+    completed: 'success',
+    failed: 'danger'
+  }
+  return types[status] || 'info'
+}
+
+const getStatusText = (status: string) => {
+  const texts = {
+    pending: '等待中',
+    processing: '检测中',
+    completed: '已完成',
+    failed: '失败'
+  }
+  return texts[status] || status
+}
+
+const formatTime = (timeStr: string) => {
+  const date = new Date(timeStr)
+  return date.toLocaleString('zh-CN')
+}
+
+const viewTask = (taskId: string) => {
+  router.push(`/task/${taskId}`)
+}
+
+const loadTasks = async () => {
+  loading.value = true
+  try {
+    // 这里应该调用获取历史任务的API
+    // 暂时使用空数组
+    tasks.value = []
+  } catch (error) {
+    console.error('Failed to load tasks:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  loadTasks()
+})
+</script>
+
+<style scoped>
+.history-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.page-title {
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-header h3 {
+  margin: 0;
+  color: #2c3e50;
+}
+
+.task-id {
+  font-family: monospace;
+  background: #f5f7fa;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.file-names p {
+  margin: 2px 0;
+  font-size: 14px;
+  color: #666;
+  word-break: break-all;
+}
+
+.empty-state,
+.loading-state {
+  padding: 40px 0;
+}
+</style> 

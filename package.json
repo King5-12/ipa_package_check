@@ -1,0 +1,45 @@
+{
+  "name": "ipa-package-check",
+  "version": "1.0.0",
+  "description": "IPA包代码相似度检测平台",
+  "main": "index.js",
+  "scripts": {
+    "dev:api": "ts-node server.ts",
+    "dev:worker": "ts-node worker.ts",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "start:api": "NODE_ENV=production ts-node server.ts",
+    "start:worker": "NODE_ENV=production ts-node worker.ts"
+  },
+  "dependencies": {
+    "koa": "^2.14.2",
+    "koa-router": "^12.0.0",
+    "koa-bodyparser": "^4.4.1",
+    "koa-cors": "^0.0.16",
+    "koa-static": "^5.0.0",
+    "multer": "^1.4.4",
+    "mysql2": "^3.5.0",
+    "axios": "^1.4.0",
+    "fs-extra": "^11.1.1",
+    "uuid": "^9.0.0",
+    "node-rsync": "1.0.3",
+    "compression": "^1.7.4",
+    "pm2": "^5.3.0",
+    "dotenv": "^16.3.1",
+    "path": "^0.12.7",
+    "crypto": "^1.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.4.5",
+    "@types/koa": "^2.13.8",
+    "@types/koa-router": "^7.4.4",
+    "@types/koa-bodyparser": "^4.3.10",
+    "@types/multer": "^1.4.7",
+    "@types/uuid": "^9.0.2",
+    "@types/fs-extra": "^11.0.1",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.1"
+  },
+  "author": "",
+  "license": "MIT"
+} 

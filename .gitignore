@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Build outputs
+dist/
+*/dist/
+public/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Storage
+storage/
+worker_storage/
+
+# Temporary files
+*.tmp
+temp/
+.cache/
+
+# Database
+*.sqlite
+*.db
+
+# PM2
+.pm2/
+pids/
+*.pid
+
+# Coverage
+coverage/
+.nyc_output/ 
