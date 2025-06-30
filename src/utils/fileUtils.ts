@@ -4,11 +4,19 @@ import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 export class FileUtils {
+  // 获取绝对路径的辅助方法
+  private static getAbsolutePath(relativePath: string): string {
+    if (path.isAbsolute(relativePath)) {
+      return relativePath;
+    }
+    return path.resolve(process.cwd(), relativePath);
+  }
+
   static async calculateHash(filePath: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const hash = crypto.createHash('sha256');
       const stream = fs.createReadStream(filePath);
-      
+
       stream.on('data', (data) => hash.update(data));
       stream.on('end', () => resolve(hash.digest('hex')));
       stream.on('error', reject);
@@ -47,7 +55,8 @@ export class FileUtils {
 
   static createTaskStoragePath(taskId: string): string {
     const storagePath = process.env.STORAGE_PATH || './storage';
-    return path.join(storagePath, 'ipa', taskId);
+    const absoluteStoragePath = this.getAbsolutePath(storagePath);
+    return path.join(absoluteStoragePath, taskId);
   }
 
   static async ensureDirectoryExists(dirPath: string): Promise<void> {
@@ -73,21 +82,22 @@ export class FileUtils {
   static async cleanupExpiredFiles(): Promise<void> {
     try {
       const storagePath = process.env.STORAGE_PATH || './storage';
-      const ipaDir = path.join(storagePath, 'ipa');
-      
-      if (!await fs.pathExists(ipaDir)) {
+      const absoluteStoragePath = this.getAbsolutePath(storagePath);
+      const ipaDir = path.join(absoluteStoragePath, 'ipa');
+
+      if (!(await fs.pathExists(ipaDir))) {
         return;
       }
 
       const expireDays = parseInt(process.env.TEMP_FILE_CLEANUP_DAYS || '3');
-      const expireTime = Date.now() - (expireDays * 24 * 60 * 60 * 1000);
+      const expireTime = Date.now() - expireDays * 24 * 60 * 60 * 1000;
 
       const directories = await fs.readdir(ipaDir);
-      
+
       for (const dir of directories) {
         const dirPath = path.join(ipaDir, dir);
         const stats = await fs.stat(dirPath);
-        
+
         if (stats.isDirectory() && stats.mtime.getTime() < expireTime) {
           await fs.remove(dirPath);
           console.log(`Cleaned up expired directory: ${dirPath}`);
@@ -104,6 +114,19 @@ export class FileUtils {
 
   static getTempUploadPath(): string {
     const storagePath = process.env.STORAGE_PATH || './storage';
-    return path.join(storagePath, 'temp');
+    const absoluteStoragePath = this.getAbsolutePath(storagePath);
+    return path.join(absoluteStoragePath, 'temp');
   }
-} 
+
+  // 获取存储根路径的绝对路径
+  static getStorageRootPath(): string {
+    const storagePath = process.env.STORAGE_PATH || './storage';
+    return this.getAbsolutePath(storagePath);
+  }
+
+  // 获取工作目录的本地存储绝对路径
+  static getWorkerStoragePath(workerStoragePath?: string): string {
+    const localStorage = workerStoragePath || process.env.LOCAL_STORAGE || './worker_storage';
+    return this.getAbsolutePath(localStorage);
+  }
+}

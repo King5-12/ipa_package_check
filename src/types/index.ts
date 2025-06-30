@@ -57,4 +57,5 @@ export interface FileRequest {
   task_id: string;
   file_name: string;
   worker_ip: string;
+  worker_storage_path: string;
 } 

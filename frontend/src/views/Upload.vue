@@ -35,7 +35,7 @@
                 </div>
                 <template #tip>
                   <div class="el-upload__tip">
-                    只能上传IPA文件，且不超过200MB
+                    只能上传IPA文件，且不超过2G
                   </div>
                 </template>
               </el-upload>
@@ -63,7 +63,7 @@
                 </div>
                 <template #tip>
                   <div class="el-upload__tip">
-                    只能上传IPA文件，且不超过200MB
+                    只能上传IPA文件，且不超过2G
                   </div>
                 </template>
               </el-upload>
@@ -196,14 +196,14 @@ const handleFile2Remove = () => {
 
 const beforeUpload = (file: File) => {
   const isIPA = file.name.toLowerCase().endsWith('.ipa')
-  const isLt200M = file.size / 1024 / 1024 < 200
+  const isLt200M = file.size / 1024 / 1024 < 2000
 
   if (!isIPA) {
     ElMessage.error('只能上传IPA文件!')
     return false
   }
   if (!isLt200M) {
-    ElMessage.error('文件大小不能超过200MB!')
+    ElMessage.error('文件大小不能超过2G!')
     return false
   }
   return true
@@ -279,9 +279,9 @@ const viewTask = (taskId: string) => {
 // 加载最近任务
 const loadRecentTasks = async () => {
   try {
-    // 这里应该调用获取最近任务的API
-    // 暂时使用空数组
-    recentTasks.value = []
+    // 获取最近的5个任务
+    const result = await taskApi.getAllTasks(5, 0)
+    recentTasks.value = result.tasks
   } catch (error) {
     console.error('Failed to load recent tasks:', error)
   }

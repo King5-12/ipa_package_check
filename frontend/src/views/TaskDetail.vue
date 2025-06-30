@@ -204,7 +204,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   ArrowLeft, Refresh, DocumentCopy, Clock, Loading, 
-  CheckCircle, WarningFilled, Plus, List, Download, 
+  CircleCheck, WarningFilled, Plus, List, Download, 
   Close, Document 
 } from '@element-plus/icons-vue'
 import { taskApi, type TaskStatus } from '../api'
@@ -251,7 +251,7 @@ const getStatusIcon = (status: string) => {
   const icons = {
     pending: Clock,
     processing: Loading,
-    completed: CheckCircle,
+    completed: CircleCheck,
     failed: WarningFilled
   }
   return icons[status] || Clock

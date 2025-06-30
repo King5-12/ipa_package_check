@@ -5,12 +5,30 @@ import axios from 'axios';
 import { spawn } from 'child_process';
 import os from 'os';
 
+const envFile = process.env.NODE_ENV === 'production' ? '.env.production' : '.env';
 // 加载环境变量
-dotenv.config();
+dotenv.config({ path: envFile });
 
 import { database } from './src/database';
 import { FileUtils } from './src/utils/fileUtils';
 import { Task, DetectionResult, WorkerConfig } from './src/types';
+
+// 获取检测结果基础路径，支持环境变量配置
+const getBasePath = (): string => {
+  let defaultPath: string;
+
+  // 根据平台设置默认路径
+  if (os.platform() === 'win32') {
+    defaultPath = 'D:\\upload\\dist';
+  } else {
+    defaultPath = '/var/lib/detection/results';
+  }
+
+  const configuredPath = process.env.DETECTION_BASE_PATH || defaultPath;
+  return path.isAbsolute(configuredPath) ? configuredPath : path.resolve(process.cwd(), configuredPath);
+};
+
+const basePath = getBasePath();
 
 class Worker {
   private config: WorkerConfig;
@@ -18,11 +36,14 @@ class Worker {
   private activeTasks = new Map<string, boolean>();
 
   constructor() {
+    // 获取本地存储的绝对路径
+    const localStoragePath = FileUtils.getWorkerStoragePath(process.env.LOCAL_STORAGE);
+
     this.config = {
-      worker_id: process.env.WORKER_ID || `worker-${os.hostname()}`,
-      worker_ip: process.env.WORKER_IP || this.getLocalIP(),
+      worker_id: `worker-${os.hostname()}`,
+      worker_ip: this.getLocalIP(),
       max_concurrent: parseInt(process.env.MAX_CONCURRENT_TASKS || '2'),
-      local_storage: process.env.LOCAL_STORAGE || './worker_storage'
+      local_storage: localStoragePath,
     };
 
     // 确保本地存储目录存在
@@ -46,9 +67,37 @@ class Worker {
 
   async start(): Promise<void> {
     this.running = true;
-    console.log(`Worker ${this.config.worker_id} started on ${this.config.worker_ip}`);
+
+    // 打印启动信息和路径配置
+    console.log('='.repeat(60));
+    console.log(`Worker ${this.config.worker_id} starting...`);
+    console.log(`Worker IP: ${this.config.worker_ip}`);
     console.log(`Max concurrent tasks: ${this.config.max_concurrent}`);
-    console.log(`Local storage: ${this.config.local_storage}`);
+    console.log('');
+    console.log('Storage configuration:');
+    console.log(`  - Local storage (absolute): ${this.config.local_storage}`);
+    console.log(`  - Detection base path: ${basePath}`);
+    console.log(`  - Current working directory: ${process.cwd()}`);
+
+    // 确保本地存储目录存在
+    try {
+      await FileUtils.ensureDirectoryExists(this.config.local_storage);
+      console.log('✓ Local storage directory initialized successfully');
+
+      // 检查检测结果基础路径是否存在
+      if (await fs.pathExists(basePath)) {
+        console.log('✓ Detection base path exists');
+      } else {
+        console.warn('⚠ Detection base path does not exist, detection may fail');
+        console.warn(`  Expected path: ${basePath}`);
+      }
+    } catch (error) {
+      console.error('✗ Failed to initialize storage directories:', error);
+      throw error;
+    }
+
+    console.log('='.repeat(60));
+    console.log(`Worker ${this.config.worker_id} started successfully`);
 
     // 主处理循环
     while (this.running) {
@@ -56,7 +105,7 @@ class Worker {
         if (this.activeTasks.size < this.config.max_concurrent) {
           await this.processNextTask();
         }
-        
+
         // 短暂休息避免CPU占用过高
         await this.sleep(parseInt(process.env.POLLING_INTERVAL_MS || '5000'));
       } catch (error) {
@@ -90,16 +139,10 @@ class Worker {
       expireAt.setMinutes(expireAt.getMinutes() + parseInt(process.env.TASK_TIMEOUT_MINUTES || '30'));
 
       // 分配任务给当前Worker
-      await database.assignTaskToWorker(
-        taskId,
-        this.config.worker_id,
-        this.config.worker_ip,
-        expireAt
-      );
+      await database.assignTaskToWorker(taskId, this.config.worker_id, this.config.worker_ip, expireAt);
 
       // 异步处理任务
       this.handleTaskAsync(task);
-
     } catch (error: any) {
       console.error(`Error processing task ${taskId}:`, error);
       this.activeTasks.delete(taskId);
@@ -121,7 +164,6 @@ class Worker {
       await database.updateTaskResult(taskId, 'completed', result.similarity_score);
 
       console.log(`Task ${taskId} completed with similarity score: ${result.similarity_score}`);
-
     } catch (error: any) {
       console.error(`Task ${taskId} failed:`, error);
       await database.updateTaskStatus(taskId, 'failed', error?.message || 'Unknown error');
@@ -141,13 +183,16 @@ class Worker {
     const file1Exists = await this.isFileValid(file1Path, task.file1_hash);
     const file2Exists = await this.isFileValid(file2Path, task.file2_hash);
 
+    console.log('file1Path', file1Path, task.file1_hash);
+    console.log('file2Path', file2Path, task.file2_hash);
+
     // 请求缺失的文件
     if (!file1Exists) {
-      await this.requestFile(task.task_id, task.file1_name);
+      throw new Error('File 1 not found');
     }
-    
+
     if (!file2Exists) {
-      await this.requestFile(task.task_id, task.file2_name);
+      throw new Error('File 2 not found');
     }
 
     // 等待文件传输完成
@@ -156,7 +201,7 @@ class Worker {
 
   private async isFileValid(filePath: string, expectedHash?: string): Promise<boolean> {
     try {
-      if (!await fs.pathExists(filePath)) {
+      if (!(await fs.pathExists(filePath))) {
         return false;
       }
 
@@ -177,9 +222,11 @@ class Worker {
       await axios.post(`${apiUrl}/api/files/request`, {
         task_id: taskId,
         file_name: fileName,
-        worker_ip: this.config.worker_ip
+        worker_ip: this.config.worker_ip,
+        worker_storage_path: this.config.local_storage,
       });
       console.log(`Requested file: ${fileName} for task: ${taskId}`);
+      console.log(`  Worker storage path: ${this.config.local_storage}`);
     } catch (error) {
       console.error(`Failed to request file ${fileName}:`, error);
       throw error;
@@ -212,16 +259,16 @@ class Worker {
 
     return new Promise((resolve, reject) => {
       // 根据平台选择检测工具
-      const toolName = os.platform() === 'win32' ? 'tool.exe' : 'tool';
-      
+      const toolPath = path.join(basePath, 'main.exe');
+
       // 构建命令参数
-      const args = [file1Path, file2Path];
+      const args = [task.task_id, file1Path, file2Path];
 
-      console.log(`Running detection tool: ${toolName} ${args.join(' ')}`);
+      console.log(`Running detection tool: ${toolPath} ${args.join(' ')}`);
 
-      const detectionProcess = spawn(toolName, args, {
+      const detectionProcess = spawn(toolPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        cwd: localTaskDir
+        cwd: localTaskDir,
       });
 
       let output = '';
@@ -239,7 +286,7 @@ class Worker {
         if (code === 0) {
           try {
             // 解析输出结果
-            const result = this.parseDetectionOutput(output);
+            const result = this.getResult(task.task_id);
             resolve(result);
           } catch (parseError: any) {
             reject(new Error(`Failed to parse detection output: ${parseError?.message || 'Unknown error'}`));
@@ -249,16 +296,60 @@ class Worker {
         }
       });
 
-      detectionProcess.on('error', (error:any) => {
+      detectionProcess.on('error', (error: any) => {
+        console.error('Detection tool error:', error?.message);
         reject(new Error(`Detection tool error: ${error?.message || 'Unknown error'}`));
       });
 
       // 设置超时
-      setTimeout(() => {
-        detectionProcess.kill();
-        reject(new Error('Detection tool timeout'));
-      }, 10 * 60 * 1000); // 10分钟超时
+      // setTimeout(() => {
+      //   detectionProcess.kill();
+      //   reject(new Error('Detection tool timeout'));
+      // }, 10 * 60 * 1000); // 10分钟超时
     });
+  }
+
+  private async getResult(taskId: string): Promise<DetectionResult> {
+    try {
+      // 构建结果文件路径: basePath/result/{taskId}/result.json
+      const resultDir = path.join(basePath, 'result', taskId);
+      const resultFilePath = path.join(resultDir, 'result.json');
+
+      console.log(`Reading detection result from: ${resultFilePath}`);
+
+      // 检查结果文件是否存在
+      if (!(await fs.pathExists(resultFilePath))) {
+        throw new Error(`Result file not found: ${resultFilePath}`);
+      }
+
+      // 读取并解析JSON文件
+      const resultContent = await fs.readFile(resultFilePath, 'utf-8');
+      const result = JSON.parse(resultContent);
+
+      console.log(`Detection result read successfully:`, result);
+
+      // 验证结果格式
+      if (typeof result.sim !== 'number') {
+        throw new Error(`Invalid result format: 'sim' field must be a number, got ${typeof result.sim}`);
+      }
+
+      // 转换为标准的DetectionResult格式
+      const detectionResult: DetectionResult = {
+        similarity_score: result.sim,
+      };
+
+      // 如果有其他字段，也包含进去
+      if (result.details) {
+        detectionResult.details = result.details;
+      }
+
+      console.log(`Converted detection result:`, detectionResult);
+
+      return detectionResult;
+    } catch (error: any) {
+      console.error(`Failed to read detection result for task ${taskId}:`, error);
+      throw new Error(`Detection failed: ${error?.message || 'Unknown error'}`);
+    }
   }
 
   private parseDetectionOutput(output: string): DetectionResult {
@@ -286,7 +377,6 @@ class Worker {
       // 默认返回随机相似度用于测试
       console.warn('Could not parse detection output, using random score for testing');
       return { similarity_score: Math.random() };
-
     } catch (error) {
       console.error('Error parsing detection output:', error);
       throw new Error('Invalid detection output format');
@@ -294,7 +384,7 @@ class Worker {
   }
 
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 
@@ -319,4 +409,4 @@ if (require.main === module) {
     console.error('Worker startup error:', error);
     process.exit(1);
   });
-} 
+}

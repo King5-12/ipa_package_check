@@ -78,6 +78,19 @@
       <div v-if="loading" class="loading-state">
         <el-skeleton :rows="5" animated />
       </div>
+
+      <!-- 分页控件 -->
+      <div v-if="!loading && tasks.length > 0" class="pagination-container">
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="totalTasks"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
+      </div>
     </el-card>
   </div>
 </template>
@@ -85,12 +98,18 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
-import type { TaskStatus } from '../api'
+import { taskApi, type TaskStatus } from '../api'
 
 const router = useRouter()
 const loading = ref(false)
 const tasks = ref<TaskStatus[]>([])
+
+// 分页相关
+const currentPage = ref(1)
+const pageSize = ref(20)
+const totalTasks = ref(0)
 
 const getStatusType = (status: string) => {
   const types = {
@@ -124,14 +143,28 @@ const viewTask = (taskId: string) => {
 const loadTasks = async () => {
   loading.value = true
   try {
-    // 这里应该调用获取历史任务的API
-    // 暂时使用空数组
-    tasks.value = []
+    const offset = (currentPage.value - 1) * pageSize.value
+    const result = await taskApi.getAllTasks(pageSize.value, offset)
+    tasks.value = result.tasks
+    totalTasks.value = result.total
   } catch (error) {
     console.error('Failed to load tasks:', error)
+    ElMessage.error('加载任务列表失败')
   } finally {
     loading.value = false
   }
+}
+
+// 分页事件处理
+const handleSizeChange = (val: number) => {
+  pageSize.value = val
+  currentPage.value = 1 // 重置到第一页
+  loadTasks()
+}
+
+const handleCurrentChange = (val: number) => {
+  currentPage.value = val
+  loadTasks()
 }
 
 onMounted(() => {
@@ -178,5 +211,11 @@ onMounted(() => {
 .empty-state,
 .loading-state {
   padding: 40px 0;
+}
+
+.pagination-container {
+  padding: 20px 0;
+  display: flex;
+  justify-content: center;
 }
 </style> 

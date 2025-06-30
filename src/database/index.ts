@@ -99,7 +99,7 @@ class Database {
     const connection = await this.pool.getConnection();
     try {
       // 获取下一个待处理的任务，使用行锁避免并发问题
-      await connection.execute('START TRANSACTION');
+      await connection.beginTransaction();
       
       const [rows] = await connection.execute(
         'SELECT * FROM tasks WHERE status = ? ORDER BY created_at ASC LIMIT 1 FOR UPDATE',
@@ -108,14 +108,14 @@ class Database {
       
       const tasks = rows as Task[];
       if (tasks.length === 0) {
-        await connection.execute('COMMIT');
+        await connection.commit();
         return null;
       }
 
-      await connection.execute('COMMIT');
+      await connection.commit();
       return tasks[0];
     } catch (error) {
-      await connection.execute('ROLLBACK');
+      await connection.rollback();
       throw error;
     } finally {
       connection.release();
@@ -143,6 +143,27 @@ class Database {
          updated_at = CURRENT_TIMESTAMP 
          WHERE status = 'processing' AND expire_at < CURRENT_TIMESTAMP`
       );
+    } finally {
+      connection.release();
+    }
+  }
+
+  async getAllTasks(limit: number = 50, offset: number = 0): Promise<{ tasks: Task[]; total: number }> {
+    const connection = await this.pool.getConnection();
+    try {
+      // 获取总数
+      const [countRows] = await connection.query('SELECT COUNT(*) as total FROM tasks');
+      const total = (countRows as any[])[0].total;
+
+      // 获取分页数据
+      const [rows] = await connection.query(
+        `SELECT * FROM tasks ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`
+      );
+      
+      return {
+        tasks: rows as Task[],
+        total: total
+      };
     } finally {
       connection.release();
     }

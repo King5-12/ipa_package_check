@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs-extra';
 import os from 'os';
+import { FileUtils } from './fileUtils';
 
 export class RsyncUtils {
   static async transferFile(sourceFile: string, targetIp: string, targetPath: string): Promise<void> {
@@ -60,11 +61,25 @@ export class RsyncUtils {
     });
   }
 
-  static async transferToWorker(taskId: string, fileName: string, workerIp: string): Promise<void> {
+  static async transferToWorker(taskId: string, fileName: string, workerIp: string, workerStoragePath?: string): Promise<void> {
     try {
-      const storagePath = process.env.STORAGE_PATH || './storage';
-      const sourceFile = path.join(storagePath, 'ipa', taskId, fileName);
-      const targetPath = `/tmp/ipa_worker/${taskId}/`;
+      // 使用FileUtils获取API服务器存储的绝对路径
+      const storageRootPath = FileUtils.getStorageRootPath();
+      const sourceFile = path.join(storageRootPath, 'ipa', taskId, fileName);
+      
+      // 构建Worker端的绝对目标路径
+      let targetPath: string;
+      if (workerStoragePath) {
+        // 使用Worker提供的绝对路径
+        targetPath = path.join(workerStoragePath, taskId, fileName);
+      } else {
+        // 降级到临时目录
+        targetPath = `/tmp/ipa_worker/${taskId}/${fileName}`;
+      }
+
+      console.log(`Transferring file:`);
+      console.log(`  Source (API): ${sourceFile}`);
+      console.log(`  Target (Worker): ${workerIp}:${targetPath}`);
 
       // 验证源文件存在
       if (!await fs.pathExists(sourceFile)) {
@@ -72,33 +87,50 @@ export class RsyncUtils {
       }
 
       // 创建目标目录（通过SSH）
-      await this.ensureRemoteDirectory(workerIp, targetPath);
+      const targetDir = path.dirname(targetPath);
+      await this.ensureRemoteDirectory(workerIp, targetDir);
 
-      // 传输文件
+      // 传输文件到Worker的绝对路径
       await this.transferFile(sourceFile, workerIp, targetPath);
 
       console.log(`File ${fileName} transferred to worker ${workerIp} successfully`);
+      console.log(`  Final location: ${targetPath}`);
     } catch (error) {
       console.error(`Failed to transfer file ${fileName} to worker ${workerIp}:`, error);
       throw error;
     }
   }
 
+  // 保持向后兼容的方法
+  static async transferToWorkerLegacy(taskId: string, fileName: string, workerIp: string): Promise<void> {
+    return this.transferToWorker(taskId, fileName, workerIp);
+  }
+
   private static async ensureRemoteDirectory(targetIp: string, targetPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const sshKey = process.env.RSYNC_SSH_KEY_PATH;
       const sshCmd = sshKey ? `ssh -i ${sshKey}` : 'ssh';
-      const command = `${sshCmd} ${targetIp} "mkdir -p ${targetPath}"`;
+      const command = `${sshCmd} ${targetIp} "mkdir -p '${targetPath}'"`;
+
+      console.log(`Creating remote directory: ${targetPath}`);
 
       const sshProcess = spawn('sh', ['-c', command], {
         stdio: ['pipe', 'pipe', 'pipe']
       });
 
+      let errorOutput = '';
+
+      sshProcess.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+      });
+
       sshProcess.on('close', (code) => {
         if (code === 0) {
+          console.log(`✓ Remote directory created: ${targetPath}`);
           resolve();
         } else {
-          reject(new Error(`SSH mkdir failed with code ${code}`));
+          console.error(`✗ SSH mkdir failed: ${errorOutput}`);
+          reject(new Error(`SSH mkdir failed with code ${code}: ${errorOutput}`));
         }
       });
 
