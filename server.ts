@@ -1,12 +1,25 @@
-import Koa from 'koa';
-import Router from 'koa-router';
-import bodyParser from 'koa-bodyparser';
-import cors from '@koa/cors';
-import serve from 'koa-static';
-import path from 'path';
-import fs from 'fs-extra';
-import multer from '@koa/multer';
-import dotenv from 'dotenv';
+const Koa = require('koa');
+const Router = require('koa-router');
+const bodyParser = require('koa-bodyparser');
+const cors = require('@koa/cors');
+const serve = require('koa-static');
+const path = require('path');
+const fs = require('fs-extra');
+const multer = require('@koa/multer');
+const dotenv = require('dotenv');
+
+// TypeScript 类型定义
+interface KoaContext {
+  request: {
+    body?: any;
+    files?: { [fieldname: string]: any[] };
+  };
+  params: { [key: string]: string };
+  query: { [key: string]: string | string[] };
+  body: any;
+  status: number;
+  throw: (status: number, message?: string) => never;
+}
 
 const envFile = process.env.NODE_ENV === 'production' ? '.env.production' : '.env';
 // 加载环境变量
@@ -66,7 +79,7 @@ router.post(
     { name: 'file1', maxCount: 1 },
     { name: 'file2', maxCount: 1 },
   ]),
-  async (ctx) => {
+  async (ctx: KoaContext) => {
     try {
       const files = ctx.request.files as { [fieldname: string]: any[] };
 
@@ -135,7 +148,7 @@ router.post(
 );
 
 // 获取任务列表接口
-router.get('/api/tasks', async (ctx) => {
+router.get('/api/tasks', async (ctx: KoaContext) => {
   try {
     const limit = parseInt(ctx.query.limit as string) || 50;
     const offset = parseInt(ctx.query.offset as string) || 0;
@@ -167,7 +180,7 @@ router.get('/api/tasks', async (ctx) => {
 });
 
 // 查询任务状态接口
-router.get('/api/tasks/:taskId', async (ctx) => {
+router.get('/api/tasks/:taskId', async (ctx: KoaContext) => {
   try {
     const { taskId } = ctx.params;
     const task = await database.getTaskByTaskId(taskId);
@@ -185,6 +198,8 @@ router.get('/api/tasks/:taskId', async (ctx) => {
       error_message: task.error_message,
       created_at: task.created_at.toISOString(),
       updated_at: task.updated_at.toISOString(),
+      file1_name: task.file1_name,
+      file2_name: task.file2_name,
     };
 
     // 计算进度
@@ -202,6 +217,26 @@ router.get('/api/tasks/:taskId', async (ctx) => {
     ctx.status = 500;
     ctx.body = { error: 'Internal server error' };
   }
+});
+
+// /history 和 / 和 /task/d2ba3775-7af6-4b62-95dc-21883c3285f5 都代理到 /index.html
+// 前端路由处理 - 所有前端路由都返回index.html
+// 这样可以支持前端的History路由模式,让前端处理实际的路由逻辑
+// 包括 /, /history, /task/:id 等路径都会返回同一个index.html
+router.get('/', async (ctx: KoaContext) => {
+  // 读取并返回前端入口文件index.html
+  console.log('前端路由处理:', path.join(__dirname, 'public', 'index.html'));
+  ctx.body = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+});
+router.get('/history', async (ctx: KoaContext) => {
+  // 读取并返回前端入口文件index.html
+  console.log('前端路由处理:', path.join(__dirname, 'public', 'index.html'));
+  ctx.body = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+});
+router.get('/task/:taskId', async (ctx: KoaContext) => {
+  // 读取并返回前端入口文件index.html
+  console.log('前端路由处理:', path.join(__dirname, 'public', 'index.html'));
+  ctx.body = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
 });
 
 // 文件传输请求接口（供Worker使用）
@@ -241,7 +276,7 @@ router.get('/api/tasks/:taskId', async (ctx) => {
 // });
 
 // 系统状态接口
-router.get('/api/stats', async (ctx) => {
+router.get('/api/stats', async (ctx: KoaContext) => {
   try {
     const stats = await database.getTaskStats();
     ctx.body = stats;

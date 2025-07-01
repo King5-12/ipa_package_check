@@ -30,13 +30,9 @@
                 class="upload-dragger"
               >
                 <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-                <div class="el-upload__text">
-                  将IPA文件拖到此处，或<em>点击上传</em>
-                </div>
+                <div class="el-upload__text">将IPA文件拖到此处，或<em>点击上传</em></div>
                 <template #tip>
-                  <div class="el-upload__tip">
-                    只能上传IPA文件，且不超过2G
-                  </div>
+                  <div class="el-upload__tip">只能上传IPA文件，且不超过2G</div>
                 </template>
               </el-upload>
             </el-form-item>
@@ -58,13 +54,9 @@
                 class="upload-dragger"
               >
                 <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-                <div class="el-upload__text">
-                  将IPA文件拖到此处，或<em>点击上传</em>
-                </div>
+                <div class="el-upload__text">将IPA文件拖到此处，或<em>点击上传</em></div>
                 <template #tip>
-                  <div class="el-upload__tip">
-                    只能上传IPA文件，且不超过2G
-                  </div>
+                  <div class="el-upload__tip">只能上传IPA文件，且不超过2G</div>
                 </template>
               </el-upload>
             </el-form-item>
@@ -135,12 +127,7 @@
         <h3>最近的检测任务</h3>
       </template>
       <div class="recent-tasks">
-        <div 
-          v-for="task in recentTasks" 
-          :key="task.task_id"
-          class="task-item"
-          @click="viewTask(task.task_id)"
-        >
+        <div v-for="task in recentTasks" :key="task.task_id" class="task-item" @click="viewTask(task.task_id)">
           <div class="task-info">
             <p class="task-id">{{ task.task_id.slice(0, 8) }}...</p>
             <p class="task-time">{{ formatTime(task.created_at) }}</p>
@@ -155,141 +142,145 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, UploadFilled, Document, Plus, Check } from '@element-plus/icons-vue'
-import { taskApi, type TaskStatus } from '../api'
+import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { Upload, UploadFilled, Document, Plus, Check } from '@element-plus/icons-vue';
+import { taskApi, type TaskStatus } from '../api';
 
-const router = useRouter()
+const router = useRouter();
 
 // 响应式数据
-const form = ref({})
-const uploading = ref(false)
-const fileList1 = ref([])
-const fileList2 = ref([])
-const file1 = ref<File | null>(null)
-const file2 = ref<File | null>(null)
-const recentTasks = ref<TaskStatus[]>([])
+const form = ref({});
+const uploading = ref(false);
+const fileList1 = ref([]);
+const fileList2 = ref([]);
+const file1 = ref<File | null>(null);
+const file2 = ref<File | null>(null);
+const recentTasks = ref<TaskStatus[]>([]);
 
 // 计算属性
 const canSubmit = computed(() => {
-  return file1.value && file2.value && !uploading.value
-})
+  return file1.value && file2.value && !uploading.value;
+});
 
 // 文件处理方法
 const handleFile1Change = (file: any) => {
-  file1.value = file.raw
-}
+  file1.value = file.raw;
+};
 
 const handleFile1Remove = () => {
-  file1.value = null
-}
+  file1.value = null;
+};
 
 const handleFile2Change = (file: any) => {
-  file2.value = file.raw
-}
+  file2.value = file.raw;
+};
 
 const handleFile2Remove = () => {
-  file2.value = null
-}
+  file2.value = null;
+};
 
 const beforeUpload = (file: File) => {
-  const isIPA = file.name.toLowerCase().endsWith('.ipa')
-  const isLt200M = file.size / 1024 / 1024 < 2000
+  const isIPA = file.name.toLowerCase().endsWith('.ipa');
+  const isLt200M = file.size / 1024 / 1024 < 2000;
 
   if (!isIPA) {
-    ElMessage.error('只能上传IPA文件!')
-    return false
+    ElMessage.error('只能上传IPA文件!');
+    return false;
   }
   if (!isLt200M) {
-    ElMessage.error('文件大小不能超过2G!')
-    return false
+    ElMessage.error('文件大小不能超过2G!');
+    return false;
   }
-  return true
-}
+  return true;
+};
 
 // 提交任务
 const submitTask = async () => {
   if (!file1.value || !file2.value) {
-    ElMessage.warning('请选择两个IPA文件')
-    return
+    ElMessage.warning('请选择两个IPA文件');
+    return;
+  }
+  // 校验两个文件名需要不一样
+  if (file1.value.name === file2.value.name) {
+    ElMessage.warning('两个文件名不能一样');
+    return;
   }
 
   try {
-    uploading.value = true
-    const response = await taskApi.createTask(file1.value, file2.value)
-    
-    ElMessage.success('任务创建成功!')
-    
+    uploading.value = true;
+    const response = await taskApi.createTask(file1.value, file2.value);
+
+    ElMessage.success('任务创建成功!');
+
     // 跳转到任务详情页
-    router.push(`/task/${response.task_id}`)
-    
+    router.push(`/task/${response.task_id}`);
+
     // 清除文件选择
-    file1.value = null
-    file2.value = null
-    fileList1.value = []
-    fileList2.value = []
-    
+    file1.value = null;
+    file2.value = null;
+    fileList1.value = [];
+    fileList2.value = [];
   } catch (error) {
-    ElMessage.error(`任务创建失败: ${error.message}`)
+    ElMessage.error(`任务创建失败: ${error.message}`);
   } finally {
-    uploading.value = false
+    uploading.value = false;
   }
-}
+};
 
 // 工具方法
 const formatFileSize = (bytes: number) => {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
 
 const formatTime = (timeStr: string) => {
-  const date = new Date(timeStr)
-  return date.toLocaleString('zh-CN')
-}
+  const date = new Date(timeStr);
+  return date.toLocaleString('zh-CN');
+};
 
 const getStatusType = (status: string) => {
   const types = {
     pending: 'info',
     processing: 'warning',
     completed: 'success',
-    failed: 'danger'
-  }
-  return types[status] || 'info'
-}
+    failed: 'danger',
+  };
+  return types[status] || 'info';
+};
 
 const getStatusText = (status: string) => {
   const texts = {
     pending: '等待中',
     processing: '检测中',
     completed: '已完成',
-    failed: '失败'
-  }
-  return texts[status] || status
-}
+    failed: '失败',
+  };
+  return texts[status] || status;
+};
 
 const viewTask = (taskId: string) => {
-  router.push(`/task/${taskId}`)
-}
+  router.push(`/task/${taskId}`);
+};
 
 // 加载最近任务
 const loadRecentTasks = async () => {
   try {
     // 获取最近的5个任务
-    const result = await taskApi.getAllTasks(5, 0)
-    recentTasks.value = result.tasks
+    const result = await taskApi.getAllTasks(5, 0);
+    recentTasks.value = result.tasks;
   } catch (error) {
-    console.error('Failed to load recent tasks:', error)
+    console.error('Failed to load recent tasks:', error);
   }
-}
+};
 
 onMounted(() => {
-  loadRecentTasks()
-})
+  loadRecentTasks();
+});
 </script>
 
 <style scoped>
@@ -466,13 +457,13 @@ onMounted(() => {
     grid-template-columns: 1fr;
     gap: 20px;
   }
-  
+
   .file-info .el-row {
     margin: 0;
   }
-  
+
   .file-info .el-col {
     margin-bottom: 15px;
   }
 }
-</style> 
+</style>

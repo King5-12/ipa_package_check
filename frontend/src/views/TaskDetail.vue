@@ -142,7 +142,7 @@
               查看历史记录
             </el-button>
 
-            <el-button 
+            <!-- <el-button 
               v-if="task && task.status === 'completed'"
               @click="downloadReport"
               :icon="Download"
@@ -150,9 +150,9 @@
               class="action-button"
             >
               下载报告
-            </el-button>
+            </el-button> -->
 
-            <el-button 
+            <!-- <el-button 
               v-if="task && ['pending', 'processing'].includes(task.status)"
               @click="cancelTask"
               type="danger"
@@ -161,7 +161,7 @@
               class="action-button"
             >
               取消任务
-            </el-button>
+            </el-button> -->
           </div>
         </el-card>
 

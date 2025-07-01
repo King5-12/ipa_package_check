@@ -216,22 +216,22 @@ class Worker {
     }
   }
 
-  private async requestFile(taskId: string, fileName: string): Promise<void> {
-    try {
-      const apiUrl = process.env.API_URL || 'http://localhost:8080';
-      await axios.post(`${apiUrl}/api/files/request`, {
-        task_id: taskId,
-        file_name: fileName,
-        worker_ip: this.config.worker_ip,
-        worker_storage_path: this.config.local_storage,
-      });
-      console.log(`Requested file: ${fileName} for task: ${taskId}`);
-      console.log(`  Worker storage path: ${this.config.local_storage}`);
-    } catch (error) {
-      console.error(`Failed to request file ${fileName}:`, error);
-      throw error;
-    }
-  }
+  // private async requestFile(taskId: string, fileName: string): Promise<void> {
+  //   try {
+  //     const apiUrl = process.env.API_URL || 'http://localhost:8080';
+  //     await axios.post(`${apiUrl}/api/files/request`, {
+  //       task_id: taskId,
+  //       file_name: fileName,
+  //       worker_ip: this.config.worker_ip,
+  //       worker_storage_path: this.config.local_storage,
+  //     });
+  //     console.log(`Requested file: ${fileName} for task: ${taskId}`);
+  //     console.log(`  Worker storage path: ${this.config.local_storage}`);
+  //   } catch (error) {
+  //     console.error(`Failed to request file ${fileName}:`, error);
+  //     throw error;
+  //   }
+  // }
 
   private async waitForFiles(file1Path: string, file2Path: string, hash1?: string, hash2?: string): Promise<void> {
     const maxWaitTime = 5 * 60 * 1000; // 5分钟超时
@@ -268,7 +268,7 @@ class Worker {
 
       const detectionProcess = spawn(toolPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        cwd: localTaskDir,
+        cwd: basePath,
       });
 
       let output = '';

@@ -39,6 +39,8 @@ export interface TaskStatusResponse {
   created_at: string;
   updated_at: string;
   progress?: number;
+  file1_name: string;
+  file2_name: string;
 }
 
 export interface WorkerConfig {

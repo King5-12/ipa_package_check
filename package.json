@@ -7,9 +7,11 @@
     "dev:api": "ts-node server.ts",
     "dev:worker": "ts-node worker.ts",
     "dev:frontend": "cd frontend && npm run dev",
+    "build:backend": "tsc",
     "build:frontend": "cd frontend && npm run build",
-    "start:api": "NODE_ENV=production ts-node server.ts",
-    "start:worker": "NODE_ENV=production ts-node worker.ts"
+    "build": "npm run build:backend && npm run build:frontend",
+    "start:api": "set NODE_ENV=production && node dist/server.js",
+    "start:worker": "set NODE_ENV=production && node dist/worker.js"
   },
   "dependencies": {
     "koa": "^2.14.2",
