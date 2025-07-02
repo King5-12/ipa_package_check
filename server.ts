@@ -196,8 +196,8 @@ router.get('/api/tasks/:taskId', async (ctx: KoaContext) => {
       status: task.status,
       similarity_score: task.similarity_score,
       error_message: task.error_message,
-      created_at: task.created_at.toISOString(),
-      updated_at: task.updated_at.toISOString(),
+      created_at: task.created_at.toLocaleString(),
+      updated_at: task.updated_at.toLocaleString(),
       file1_name: task.file1_name,
       file2_name: task.file2_name,
     };

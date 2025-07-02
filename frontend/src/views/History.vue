@@ -133,7 +133,17 @@ const getStatusText = (status: string) => {
 
 const formatTime = (timeStr: string) => {
   const date = new Date(timeStr)
-  return date.toLocaleString('zh-CN')
+  // 将UTC时间转换为东八区时间 (UTC+8)
+  const localDate = new Date(date.getTime() - (8 * 60 * 60 * 1000))
+  return localDate.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit', 
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
 }
 
 const viewTask = (taskId: string) => {

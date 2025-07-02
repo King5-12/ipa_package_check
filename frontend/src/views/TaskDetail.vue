@@ -1,9 +1,7 @@
 <template>
   <div class="task-detail-container">
     <div class="page-header">
-      <el-button @click="$router.go(-1)" :icon="ArrowLeft" class="back-button">
-        返回
-      </el-button>
+      <el-button @click="$router.go(-1)" :icon="ArrowLeft" class="back-button"> 返回 </el-button>
       <h1 class="page-title">检测任务详情</h1>
     </div>
 
@@ -14,9 +12,9 @@
           <template #header>
             <div class="card-header">
               <h3>任务状态</h3>
-              <el-button 
-                v-if="!isCompleted" 
-                @click="refreshStatus" 
+              <el-button
+                v-if="!isCompleted"
+                @click="refreshStatus"
                 :loading="refreshing"
                 :icon="Refresh"
                 circle
@@ -31,13 +29,7 @@
               <label>任务ID:</label>
               <div class="task-id">
                 <code>{{ task.task_id }}</code>
-                <el-button 
-                  @click="copyTaskId" 
-                  :icon="DocumentCopy" 
-                  text 
-                  size="small"
-                  class="copy-button"
-                />
+                <el-button @click="copyTaskId" :icon="DocumentCopy" text size="small" class="copy-button" />
               </div>
             </div>
 
@@ -57,7 +49,7 @@
             <!-- 进度条 -->
             <div class="status-item">
               <label>检测进度:</label>
-              <el-progress 
+              <el-progress
                 :percentage="task.progress || 0"
                 :status="getProgressStatus(task.status)"
                 :stroke-width="12"
@@ -81,8 +73,8 @@
               <h4>检测结果</h4>
               <div class="similarity-display">
                 <div class="similarity-circle">
-                  <el-progress 
-                    type="circle" 
+                  <el-progress
+                    type="circle"
                     :percentage="Math.round(task.similarity_score * 100)"
                     :width="120"
                     :stroke-width="10"
@@ -100,12 +92,7 @@
             <!-- 错误信息 -->
             <div v-if="task.error_message" class="error-message">
               <h4>错误信息</h4>
-              <el-alert
-                :title="task.error_message"
-                type="error"
-                :closable="false"
-                show-icon
-              />
+              <el-alert :title="task.error_message" type="error" :closable="false" show-icon />
             </div>
           </div>
 
@@ -123,24 +110,11 @@
           </template>
 
           <div class="actions">
-            <el-button 
-              type="primary" 
-              @click="startNewTask"
-              :icon="Plus"
-              size="large"
-              class="action-button"
-            >
+            <el-button type="primary" @click="startNewTask" :icon="Plus" size="large" class="action-button">
               新建检测任务
             </el-button>
 
-            <el-button 
-              @click="viewHistory"
-              :icon="List"
-              size="large" 
-              class="action-button"
-            >
-              查看历史记录
-            </el-button>
+            <el-button @click="viewHistory" :icon="List" size="large" class="action-button"> 查看历史记录 </el-button>
 
             <!-- <el-button 
               v-if="task && task.status === 'completed'"
@@ -199,32 +173,41 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { 
-  ArrowLeft, Refresh, DocumentCopy, Clock, Loading, 
-  CircleCheck, WarningFilled, Plus, List, Download, 
-  Close, Document 
-} from '@element-plus/icons-vue'
-import { taskApi, type TaskStatus } from '../api'
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import {
+  ArrowLeft,
+  Refresh,
+  DocumentCopy,
+  Clock,
+  Loading,
+  CircleCheck,
+  WarningFilled,
+  Plus,
+  List,
+  Download,
+  Close,
+  Document,
+} from '@element-plus/icons-vue';
+import { taskApi, type TaskStatus } from '../api';
 
 interface Props {
-  taskId: string
+  taskId: string;
 }
 
-const props = defineProps<Props>()
-const router = useRouter()
+const props = defineProps<Props>();
+const router = useRouter();
 
 // 响应式数据
-const task = ref<TaskStatus | null>(null)
-const refreshing = ref(false)
-const pollingInterval = ref<number | null>(null)
+const task = ref<TaskStatus | null>(null);
+const refreshing = ref(false);
+const pollingInterval = ref<number | null>(null);
 
 // 计算属性
 const isCompleted = computed(() => {
-  return task.value && ['completed', 'failed'].includes(task.value.status)
-})
+  return task.value && ['completed', 'failed'].includes(task.value.status);
+});
 
 // 状态相关方法
 const getStatusType = (status: string) => {
@@ -232,148 +215,154 @@ const getStatusType = (status: string) => {
     pending: 'info',
     processing: 'warning',
     completed: 'success',
-    failed: 'danger'
-  }
-  return types[status] || 'info'
-}
+    failed: 'danger',
+  };
+  return types[status] || 'info';
+};
 
 const getStatusText = (status: string) => {
   const texts = {
     pending: '等待处理',
     processing: '正在检测',
     completed: '检测完成',
-    failed: '检测失败'
-  }
-  return texts[status] || status
-}
+    failed: '检测失败',
+  };
+  return texts[status] || status;
+};
 
 const getStatusIcon = (status: string) => {
   const icons = {
     pending: Clock,
     processing: Loading,
     completed: CircleCheck,
-    failed: WarningFilled
-  }
-  return icons[status] || Clock
-}
+    failed: WarningFilled,
+  };
+  return icons[status] || Clock;
+};
 
 const getProgressStatus = (status: string) => {
-  if (status === 'completed') return 'success'
-  if (status === 'failed') return 'exception'
-  return undefined
-}
+  if (status === 'completed') return 'success';
+  if (status === 'failed') return 'exception';
+  return undefined;
+};
 
 const getSimilarityColor = (score: number) => {
-  if (score >= 0.8) return '#f56c6c'
-  if (score >= 0.6) return '#e6a23c'
-  if (score >= 0.4) return '#409eff'
-  return '#67c23a'
-}
+  if (score >= 0.8) return '#f56c6c';
+  if (score >= 0.6) return '#e6a23c';
+  if (score >= 0.4) return '#409eff';
+  return '#67c23a';
+};
 
 const getSimilarityDescription = (score: number) => {
-  if (score >= 0.9) return '极高相似度'
-  if (score >= 0.8) return '高相似度'
-  if (score >= 0.6) return '中等相似度'
-  if (score >= 0.4) return '低相似度'
-  return '极低相似度'
-}
+  if (score >= 0.9) return '极高相似度';
+  if (score >= 0.8) return '高相似度';
+  if (score >= 0.6) return '中等相似度';
+  if (score >= 0.4) return '低相似度';
+  return '极低相似度';
+};
 
 // 操作方法
 const refreshStatus = async () => {
   try {
-    refreshing.value = true
-    await loadTaskStatus()
+    refreshing.value = true;
+    await loadTaskStatus();
   } catch (error) {
-    ElMessage.error(`刷新失败: ${error.message}`)
+    ElMessage.error(`刷新失败: ${error.message}`);
   } finally {
-    refreshing.value = false
+    refreshing.value = false;
   }
-}
+};
 
 const copyTaskId = async () => {
-  if (!task.value) return
-  
+  if (!task.value) return;
+
   try {
-    await navigator.clipboard.writeText(task.value.task_id)
-    ElMessage.success('任务ID已复制到剪贴板')
+    await navigator.clipboard.writeText(task.value.task_id);
+    ElMessage.success('任务ID已复制到剪贴板');
   } catch (error) {
-    ElMessage.error('复制失败')
+    ElMessage.error('复制失败');
   }
-}
+};
 
 const startNewTask = () => {
-  router.push('/')
-}
+  router.push('/');
+};
 
 const viewHistory = () => {
-  router.push('/history')
-}
+  router.push('/history');
+};
 
 const downloadReport = () => {
-  ElMessage.info('报告下载功能开发中...')
-}
+  ElMessage.info('报告下载功能开发中...');
+};
 
 const cancelTask = async () => {
   try {
-    await ElMessageBox.confirm(
-      '确定要取消这个检测任务吗？',
-      '确认取消',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    )
-    
-    ElMessage.info('任务取消功能开发中...')
+    await ElMessageBox.confirm('确定要取消这个检测任务吗？', '确认取消', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    });
+
+    ElMessage.info('任务取消功能开发中...');
   } catch {
     // 用户取消
   }
-}
+};
 
 // 工具方法
 const formatTime = (timeStr: string) => {
-  const date = new Date(timeStr)
-  return date.toLocaleString('zh-CN')
-}
+  const date = new Date(timeStr);
+  // 将UTC时间转换为东八区时间 (UTC+8)
+  const localDate = new Date(date.getTime() - 8 * 60 * 60 * 1000);
+  return localDate.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+};
 
 const loadTaskStatus = async () => {
   try {
-    task.value = await taskApi.getTaskStatus(props.taskId)
+    task.value = await taskApi.getTaskStatus(props.taskId);
   } catch (error) {
-    ElMessage.error(`加载任务状态失败: ${error.message}`)
-    router.push('/')
+    ElMessage.error(`加载任务状态失败: ${error.message}`);
+    router.push('/');
   }
-}
+};
 
 const startPolling = () => {
   pollingInterval.value = setInterval(async () => {
     if (!isCompleted.value) {
-      await loadTaskStatus()
+      await loadTaskStatus();
     } else {
-      stopPolling()
+      stopPolling();
     }
-  }, 3000) // 每3秒轮询一次
-}
+  }, 3000); // 每3秒轮询一次
+};
 
 const stopPolling = () => {
   if (pollingInterval.value) {
-    clearInterval(pollingInterval.value)
-    pollingInterval.value = null
+    clearInterval(pollingInterval.value);
+    pollingInterval.value = null;
   }
-}
+};
 
 // 生命周期
 onMounted(async () => {
-  await loadTaskStatus()
+  await loadTaskStatus();
   if (!isCompleted.value) {
-    startPolling()
+    startPolling();
   }
-})
+});
 
 onUnmounted(() => {
-  stopPolling()
-})
+  stopPolling();
+});
 </script>
 
 <style scoped>
@@ -598,15 +587,15 @@ onUnmounted(() => {
     text-align: center;
     gap: 20px;
   }
-  
+
   .page-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
-  
+
   .back-button {
     margin-right: 0;
   }
 }
-</style> 
+</style>
