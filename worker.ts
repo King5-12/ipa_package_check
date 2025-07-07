@@ -4,6 +4,7 @@ import path from 'path';
 import axios from 'axios';
 import { spawn } from 'child_process';
 import os from 'os';
+import iconv from 'iconv-lite';
 
 const envFile = process.env.NODE_ENV === 'production' ? '.env.production' : '.env';
 // 加载环境变量
@@ -266,20 +267,37 @@ class Worker {
 
       console.log(`Running detection tool: ${toolPath} ${args.join(' ')}`);
 
-      const detectionProcess = spawn(toolPath, args, {
+      console.log('basePath', basePath);
+
+      const commandLine = `&  '${toolPath}' '-u' ${args.map((a) => `'${a.replace(/'/g, "''")}'`).join(' ')}`;
+
+      console.log('commandLine', commandLine);
+
+      const detectionProcess = spawn('powershell.exe', ['-Command', commandLine], {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: basePath,
       });
+
+      // const detectionProcess = spawn(toolPath, args, {
+      //   stdio: ['pipe', 'pipe', 'pipe'],
+      //   cwd: basePath,
+      // });
 
       let output = '';
       let errorOutput = '';
 
       detectionProcess.stdout.on('data', (data) => {
-        output += data.toString();
+        const utfData = iconv.decode(data, 'gbk');
+        const str = utfData.toString();
+        process.stdout.write(utfData);
+        output += str;
       });
 
       detectionProcess.stderr.on('data', (data) => {
-        errorOutput += data.toString();
+        const utfData = iconv.decode(data, 'gbk');
+        const str = utfData.toString();
+        process.stderr.write(utfData);
+        errorOutput += str;
       });
 
       detectionProcess.on('close', (code) => {
