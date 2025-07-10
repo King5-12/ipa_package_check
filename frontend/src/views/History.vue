@@ -52,16 +52,28 @@
             </template>
           </el-table-column>
           
-          <el-table-column label="操作" width="120">
+          <el-table-column label="操作" width="180">
             <template #default="scope">
-              <el-button 
-                type="primary" 
-                size="small" 
-                @click="viewTask(scope.row.task_id)"
-                text
-              >
-                查看详情
-              </el-button>
+              <div class="action-buttons">
+                <el-button 
+                  type="primary" 
+                  size="small" 
+                  @click="viewTask(scope.row.task_id)"
+                  text
+                >
+                  查看详情
+                </el-button>
+                <el-button 
+                  v-if="scope.row.status === 'failed'"
+                  type="warning" 
+                  size="small" 
+                  @click="retryTask(scope.row.task_id)"
+                  :loading="retryingTasks.has(scope.row.task_id)"
+                  text
+                >
+                  重试
+                </el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -105,6 +117,7 @@ import { taskApi, type TaskStatus } from '../api'
 const router = useRouter()
 const loading = ref(false)
 const tasks = ref<TaskStatus[]>([])
+const retryingTasks = ref(new Set<string>())
 
 // 分页相关
 const currentPage = ref(1)
@@ -148,6 +161,29 @@ const formatTime = (timeStr: string) => {
 
 const viewTask = (taskId: string) => {
   router.push(`/task/${taskId}`)
+}
+
+const retryTask = async (taskId: string) => {
+  try {
+    retryingTasks.value.add(taskId)
+    
+    await taskApi.retryTask(taskId)
+    
+    ElMessage.success('任务已重置，将重新开始检测')
+    
+    // 重新加载任务列表
+    await loadTasks()
+  } catch (error: any) {
+    if (error.response?.data?.error) {
+      ElMessage.error(`重试失败: ${error.response.data.error}`)
+    } else if (error.message) {
+      ElMessage.error(`重试失败: ${error.message}`)
+    } else {
+      ElMessage.error('重试失败')
+    }
+  } finally {
+    retryingTasks.value.delete(taskId)
+  }
 }
 
 const loadTasks = async () => {
@@ -227,5 +263,11 @@ onMounted(() => {
   padding: 20px 0;
   display: flex;
   justify-content: center;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 </style> 

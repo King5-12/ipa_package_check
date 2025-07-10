@@ -187,6 +187,44 @@ class Database {
       connection.release();
     }
   }
+
+  async retryTask(taskId: string): Promise<boolean> {
+    const connection = await this.pool.getConnection();
+    try {
+      // 首先检查任务是否存在且状态为失败
+      const [checkRows] = await connection.execute(
+        'SELECT status FROM tasks WHERE task_id = ?',
+        [taskId]
+      );
+      
+      const tasks = checkRows as Task[];
+      if (tasks.length === 0) {
+        return false; // 任务不存在
+      }
+      
+      if (tasks[0].status !== 'failed') {
+        return false; // 任务状态不是失败，不能重试
+      }
+      
+      // 重置任务状态为pending，清除worker信息和错误信息
+      const [result] = await connection.execute(
+        `UPDATE tasks SET 
+         status = 'pending', 
+         worker_id = NULL, 
+         worker_ip = NULL, 
+         expire_at = NULL, 
+         error_message = NULL, 
+         updated_at = CURRENT_TIMESTAMP 
+         WHERE task_id = ? AND status = 'failed'`,
+        [taskId]
+      );
+      
+      const updateResult = result as mysql.ResultSetHeader;
+      return updateResult.affectedRows > 0;
+    } finally {
+      connection.release();
+    }
+  }
 }
 
 export const database = new Database(); 

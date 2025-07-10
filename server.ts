@@ -47,12 +47,12 @@ app.use(serve(path.join(__dirname, 'public')));
 
 // 配置文件上传
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (req: any, file: any, cb: any) => {
     const uploadPath = FileUtils.getTempUploadPath();
     fs.ensureDirSync(uploadPath);
     cb(null, uploadPath);
   },
-  filename: (req, file, cb) => {
+  filename: (req: any, file: any, cb: any) => {
     // 保持原始文件名，后续会移动到任务目录
     cb(null, `${Date.now()}-${file.originalname}`);
   },
@@ -63,7 +63,7 @@ const upload = multer({
   limits: {
     fileSize: parseInt(process.env.MAX_FILE_SIZE || '209715200'), // 200MB
   },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (req: any, file: any, cb: any) => {
     if (path.extname(file.originalname).toLowerCase() === '.ipa') {
       cb(null, true);
     } else {
@@ -214,6 +214,33 @@ router.get('/api/tasks/:taskId', async (ctx: KoaContext) => {
     ctx.body = response;
   } catch (error) {
     console.error('Error getting task status:', error);
+    ctx.status = 500;
+    ctx.body = { error: 'Internal server error' };
+  }
+});
+
+// 重试任务接口
+router.post('/api/tasks/:taskId/retry', async (ctx: KoaContext) => {
+  try {
+    const { taskId } = ctx.params;
+
+    // 调用数据库方法重试任务
+    const success = await database.retryTask(taskId);
+
+    if (!success) {
+      ctx.status = 400;
+      ctx.body = { error: 'Task not found or cannot be retried. Only failed tasks can be retried.' };
+      return;
+    }
+
+    console.log(`Task ${taskId} has been reset for retry`);
+
+    ctx.body = {
+      message: 'Task has been reset and will be processed again',
+      task_id: taskId,
+    };
+  } catch (error) {
+    console.error('Error retrying task:', error);
     ctx.status = 500;
     ctx.body = { error: 'Internal server error' };
   }

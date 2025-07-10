@@ -110,6 +110,18 @@
           </template>
 
           <div class="actions">
+            <el-button 
+              v-if="task && task.status === 'failed'"
+              type="warning"
+              @click="retryTask"
+              :loading="retrying"
+              :icon="Refresh"
+              size="large"
+              class="action-button"
+            >
+              {{ retrying ? '重试中...' : '重新检测' }}
+            </el-button>
+
             <el-button type="primary" @click="startNewTask" :icon="Plus" size="large" class="action-button">
               新建检测任务
             </el-button>
@@ -202,6 +214,7 @@ const router = useRouter();
 // 响应式数据
 const task = ref<TaskStatus | null>(null);
 const refreshing = ref(false);
+const retrying = ref(false);
 const pollingInterval = ref<number | null>(null);
 
 // 计算属性
@@ -307,6 +320,45 @@ const cancelTask = async () => {
     ElMessage.info('任务取消功能开发中...');
   } catch {
     // 用户取消
+  }
+};
+
+const retryTask = async () => {
+  if (!task.value) return;
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要重新检测任务 ${task.value.task_id.slice(0, 8)}... 吗？`,
+      '确认重试',
+      {
+        confirmButtonText: '确定重试',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    );
+
+    retrying.value = true;
+    
+    await taskApi.retryTask(task.value.task_id);
+    
+    ElMessage.success('任务已重置，将重新开始检测');
+    
+    // 重新加载任务状态
+    await loadTaskStatus();
+    
+    // 如果任务重置为pending，重新开始轮询
+    if (!isCompleted.value) {
+      startPolling();
+    }
+  } catch (error: any) {
+    if (error.response?.data?.error) {
+      ElMessage.error(`重试失败: ${error.response.data.error}`);
+    } else if (error.message) {
+      ElMessage.error(`重试失败: ${error.message}`);
+    }
+    // 如果用户取消确认，不显示错误消息
+  } finally {
+    retrying.value = false;
   }
 };
 

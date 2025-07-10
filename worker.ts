@@ -14,6 +14,19 @@ import { database } from './src/database';
 import { FileUtils } from './src/utils/fileUtils';
 import { Task, DetectionResult, WorkerConfig } from './src/types';
 
+// 日志工具函数
+const getTimestamp = (): string => {
+  return new Date().toISOString().replace('T', ' ').replace('Z', '');
+};
+
+const log = (message: string, ...args: any[]): void => {
+  console.log(`[${getTimestamp()}] ${message}`, ...args);
+};
+
+const logError = (message: string, ...args: any[]): void => {
+  console.error(`[${getTimestamp()}] ${message}`, ...args);
+};
+
 // 获取检测结果基础路径，支持环境变量配置
 const getBasePath = (): string => {
   let defaultPath: string;
@@ -70,35 +83,35 @@ class Worker {
     this.running = true;
 
     // 打印启动信息和路径配置
-    console.log('='.repeat(60));
-    console.log(`Worker ${this.config.worker_id} starting...`);
-    console.log(`Worker IP: ${this.config.worker_ip}`);
-    console.log(`Max concurrent tasks: ${this.config.max_concurrent}`);
-    console.log('');
-    console.log('Storage configuration:');
-    console.log(`  - Local storage (absolute): ${this.config.local_storage}`);
-    console.log(`  - Detection base path: ${basePath}`);
-    console.log(`  - Current working directory: ${process.cwd()}`);
+    log('='.repeat(60));
+    log(`Worker ${this.config.worker_id} starting...`);
+    log(`Worker IP: ${this.config.worker_ip}`);
+    log(`Max concurrent tasks: ${this.config.max_concurrent}`);
+    log('');
+    log('Storage configuration:');
+    log(`  - Local storage (absolute): ${this.config.local_storage}`);
+    log(`  - Detection base path: ${basePath}`);
+    log(`  - Current working directory: ${process.cwd()}`);
 
     // 确保本地存储目录存在
     try {
       await FileUtils.ensureDirectoryExists(this.config.local_storage);
-      console.log('✓ Local storage directory initialized successfully');
+      log('✓ Local storage directory initialized successfully');
 
       // 检查检测结果基础路径是否存在
       if (await fs.pathExists(basePath)) {
-        console.log('✓ Detection base path exists');
+        log('✓ Detection base path exists');
       } else {
-        console.warn('⚠ Detection base path does not exist, detection may fail');
-        console.warn(`  Expected path: ${basePath}`);
+        log('⚠ Detection base path does not exist, detection may fail');
+        log(`  Expected path: ${basePath}`);
       }
     } catch (error) {
-      console.error('✗ Failed to initialize storage directories:', error);
+      logError('✗ Failed to initialize storage directories:', error);
       throw error;
     }
 
-    console.log('='.repeat(60));
-    console.log(`Worker ${this.config.worker_id} started successfully`);
+    log('='.repeat(60));
+    log(`Worker ${this.config.worker_id} started successfully`);
 
     // 主处理循环
     while (this.running) {
@@ -110,7 +123,7 @@ class Worker {
         // 短暂休息避免CPU占用过高
         await this.sleep(parseInt(process.env.POLLING_INTERVAL_MS || '5000'));
       } catch (error) {
-        console.error('Worker error:', error);
+        logError('Worker error:', error);
         await this.sleep(10000); // 错误时等待更长时间
       }
     }
@@ -118,7 +131,7 @@ class Worker {
 
   stop(): void {
     this.running = false;
-    console.log(`Worker ${this.config.worker_id} stopping...`);
+    log(`Worker ${this.config.worker_id} stopping...`);
   }
 
   private async processNextTask(): Promise<void> {
@@ -129,7 +142,7 @@ class Worker {
     }
 
     const taskId = task.task_id;
-    console.log(`Processing task: ${taskId}`);
+    log(`Processing task: ${taskId}`);
 
     // 标记任务为活跃状态
     this.activeTasks.set(taskId, true);
@@ -145,7 +158,7 @@ class Worker {
       // 异步处理任务
       this.handleTaskAsync(task);
     } catch (error: any) {
-      console.error(`Error processing task ${taskId}:`, error);
+      logError(`Error processing task ${taskId}:`, error);
       this.activeTasks.delete(taskId);
       await database.updateTaskStatus(taskId, 'failed', error?.message || 'Unknown error');
     }
@@ -164,9 +177,9 @@ class Worker {
       // 更新任务结果
       await database.updateTaskResult(taskId, 'completed', result.similarity_score);
 
-      console.log(`Task ${taskId} completed with similarity score: ${result.similarity_score}`);
+      log(`Task ${taskId} completed with similarity score: ${result.similarity_score}`);
     } catch (error: any) {
-      console.error(`Task ${taskId} failed:`, error);
+      logError(`Task ${taskId} failed:`, error);
       await database.updateTaskStatus(taskId, 'failed', error?.message || 'Unknown error');
     } finally {
       this.activeTasks.delete(taskId);
@@ -184,8 +197,8 @@ class Worker {
     const file1Exists = await this.isFileValid(file1Path, task.file1_hash);
     const file2Exists = await this.isFileValid(file2Path, task.file2_hash);
 
-    console.log('file1Path', file1Path, task.file1_hash);
-    console.log('file2Path', file2Path, task.file2_hash);
+    log('file1Path', file1Path, task.file1_hash);
+    log('file2Path', file2Path, task.file2_hash);
 
     // 请求缺失的文件
     if (!file1Exists) {
@@ -226,10 +239,10 @@ class Worker {
   //       worker_ip: this.config.worker_ip,
   //       worker_storage_path: this.config.local_storage,
   //     });
-  //     console.log(`Requested file: ${fileName} for task: ${taskId}`);
-  //     console.log(`  Worker storage path: ${this.config.local_storage}`);
+  //     log(`Requested file: ${fileName} for task: ${taskId}`);
+  //     log(`  Worker storage path: ${this.config.local_storage}`);
   //   } catch (error) {
-  //     console.error(`Failed to request file ${fileName}:`, error);
+  //     logError(`Failed to request file ${fileName}:`, error);
   //     throw error;
   //   }
   // }
@@ -243,7 +256,7 @@ class Worker {
       const file2Valid = await this.isFileValid(file2Path, hash2);
 
       if (file1Valid && file2Valid) {
-        console.log('All files are ready for processing');
+        log('All files are ready for processing');
         return;
       }
 
@@ -265,13 +278,13 @@ class Worker {
       // 构建命令参数
       const args = [task.task_id, file1Path, file2Path];
 
-      console.log(`Running detection tool: ${toolPath} ${args.join(' ')}`);
+      log(`Running detection tool: ${toolPath} ${args.join(' ')}`);
 
-      console.log('basePath', basePath);
+      log('basePath', basePath);
 
       const commandLine = `&  '${toolPath}' '-u' ${args.map((a) => `'${a.replace(/'/g, "''")}'`).join(' ')}`;
 
-      console.log('commandLine', commandLine);
+      log('commandLine', commandLine);
 
       const detectionProcess = spawn('powershell.exe', ['-Command', commandLine], {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -289,14 +302,16 @@ class Worker {
       detectionProcess.stdout.on('data', (data) => {
         const utfData = iconv.decode(data, 'gbk');
         const str = utfData.toString();
-        process.stdout.write(utfData);
+        const now = new Date().toLocaleString();
+        process.stdout.write(`[${now}] ${str}`);
         output += str;
       });
 
       detectionProcess.stderr.on('data', (data) => {
         const utfData = iconv.decode(data, 'gbk');
         const str = utfData.toString();
-        process.stderr.write(utfData);
+        const now = new Date().toLocaleString();
+        process.stderr.write(`[${now}] ${str}`);
         errorOutput += str;
       });
 
@@ -315,7 +330,7 @@ class Worker {
       });
 
       detectionProcess.on('error', (error: any) => {
-        console.error('Detection tool error:', error?.message);
+        logError('Detection tool error:', error?.message);
         reject(new Error(`Detection tool error: ${error?.message || 'Unknown error'}`));
       });
 
@@ -333,7 +348,7 @@ class Worker {
       const resultDir = path.join(basePath, 'result', taskId);
       const resultFilePath = path.join(resultDir, 'result.json');
 
-      console.log(`Reading detection result from: ${resultFilePath}`);
+      log(`Reading detection result from: ${resultFilePath}`);
 
       // 检查结果文件是否存在
       if (!(await fs.pathExists(resultFilePath))) {
@@ -344,7 +359,7 @@ class Worker {
       const resultContent = await fs.readFile(resultFilePath, 'utf-8');
       const result = JSON.parse(resultContent);
 
-      console.log(`Detection result read successfully:`, result);
+      log(`Detection result read successfully:`, result);
 
       // 验证结果格式
       if (typeof result.sim !== 'number') {
@@ -361,11 +376,11 @@ class Worker {
         detectionResult.details = result.details;
       }
 
-      console.log(`Converted detection result:`, detectionResult);
+      log(`Converted detection result:`, detectionResult);
 
       return detectionResult;
     } catch (error: any) {
-      console.error(`Failed to read detection result for task ${taskId}:`, error);
+      logError(`Failed to read detection result for task ${taskId}:`, error);
       throw new Error(`Detection failed: ${error?.message || 'Unknown error'}`);
     }
   }
@@ -393,10 +408,10 @@ class Worker {
       }
 
       // 默认返回随机相似度用于测试
-      console.warn('Could not parse detection output, using random score for testing');
+      log('Could not parse detection output, using random score for testing');
       return { similarity_score: Math.random() };
     } catch (error) {
-      console.error('Error parsing detection output:', error);
+      logError('Error parsing detection output:', error);
       throw new Error('Invalid detection output format');
     }
   }
@@ -410,13 +425,13 @@ class Worker {
 const worker = new Worker();
 
 process.on('SIGINT', () => {
-  console.log('Received SIGINT, shutting down gracefully...');
+  log('Received SIGINT, shutting down gracefully...');
   worker.stop();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-  console.log('Received SIGTERM, shutting down gracefully...');
+  log('Received SIGTERM, shutting down gracefully...');
   worker.stop();
   process.exit(0);
 });
@@ -424,7 +439,7 @@ process.on('SIGTERM', () => {
 // 启动Worker
 if (require.main === module) {
   worker.start().catch((error) => {
-    console.error('Worker startup error:', error);
+    logError('Worker startup error:', error);
     process.exit(1);
   });
 }

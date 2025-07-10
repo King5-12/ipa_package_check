@@ -102,6 +102,11 @@ export const taskApi = {
   healthCheck: async () => {
     return api.get('/health');
   },
+
+  // 重试任务
+  retryTask: async (taskId: string): Promise<{ message: string; task_id: string }> => {
+    return api.post(`/tasks/${taskId}/retry`);
+  },
 };
 
 export default api;
