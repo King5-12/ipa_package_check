@@ -207,6 +207,11 @@ const submitTask = async () => {
     ElMessage.warning('两个文件名不能一样');
     return;
   }
+  // 检查文件名是否包含debug
+  if (file1.value.name.toLowerCase().includes('debug') || file2.value.name.toLowerCase().includes('debug')) {
+    ElMessage.warning('请上传Release包,不能上传Debug包');
+    return;
+  }
 
   try {
     uploading.value = true;
