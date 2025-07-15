@@ -202,6 +202,11 @@ const submitTask = async () => {
     ElMessage.warning('请选择两个IPA文件');
     return;
   }
+  // 校验文件后缀名
+  if (!file1.value.name.toLowerCase().endsWith('.ipa') || !file2.value.name.toLowerCase().endsWith('.ipa')) {
+    ElMessage.warning('请选择IPA文件');
+    return;
+  }
   // 校验两个文件名需要不一样
   if (file1.value.name === file2.value.name) {
     ElMessage.warning('两个文件名不能一样');
