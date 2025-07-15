@@ -14,7 +14,7 @@ class Database {
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
-      timezone: '+00:00'
+      timezone: '+00:00',
     });
   }
 
@@ -24,9 +24,17 @@ class Database {
       const [result] = await connection.execute(
         `INSERT INTO tasks (task_id, file1_name, file2_name, storage_path, file1_hash, file2_hash, status) 
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [task.task_id, task.file1_name, task.file2_name, task.storage_path, task.file1_hash, task.file2_hash, task.status]
+        [
+          task.task_id,
+          task.file1_name,
+          task.file2_name,
+          task.storage_path,
+          task.file1_hash,
+          task.file2_hash,
+          task.status,
+        ]
       );
-      
+
       const insertResult = result as mysql.ResultSetHeader;
       return await this.getTaskById(insertResult.insertId);
     } finally {
@@ -71,7 +79,12 @@ class Database {
     }
   }
 
-  async updateTaskResult(taskId: string, status: TaskStatus, similarityScore?: number, errorMessage?: string): Promise<void> {
+  async updateTaskResult(
+    taskId: string,
+    status: TaskStatus,
+    similarityScore?: number,
+    errorMessage?: string
+  ): Promise<void> {
     const connection = await this.pool.getConnection();
     try {
       await connection.execute(
@@ -100,12 +113,12 @@ class Database {
     try {
       // 获取下一个待处理的任务，使用行锁避免并发问题
       await connection.beginTransaction();
-      
+
       const [rows] = await connection.execute(
         'SELECT * FROM tasks WHERE status = ? ORDER BY created_at ASC LIMIT 1 FOR UPDATE',
         ['pending']
       );
-      
+
       const tasks = rows as Task[];
       if (tasks.length === 0) {
         await connection.commit();
@@ -159,17 +172,23 @@ class Database {
       const [rows] = await connection.query(
         `SELECT * FROM tasks ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`
       );
-      
+
       return {
         tasks: rows as Task[],
-        total: total
+        total: total,
       };
     } finally {
       connection.release();
     }
   }
 
-  async getTaskStats(): Promise<{ total: number; pending: number; processing: number; completed: number; failed: number }> {
+  async getTaskStats(): Promise<{
+    total: number;
+    pending: number;
+    processing: number;
+    completed: number;
+    failed: number;
+  }> {
     const connection = await this.pool.getConnection();
     try {
       const [rows] = await connection.execute(`
@@ -192,20 +211,17 @@ class Database {
     const connection = await this.pool.getConnection();
     try {
       // 首先检查任务是否存在且状态为失败
-      const [checkRows] = await connection.execute(
-        'SELECT status FROM tasks WHERE task_id = ?',
-        [taskId]
-      );
-      
+      const [checkRows] = await connection.execute('SELECT status FROM tasks WHERE task_id = ?', [taskId]);
+
       const tasks = checkRows as Task[];
       if (tasks.length === 0) {
         return false; // 任务不存在
       }
-      
-      if (tasks[0].status !== 'failed') {
+
+      if (tasks[0].status !== 'failed' && tasks[0].status !== 'processing') {
         return false; // 任务状态不是失败，不能重试
       }
-      
+
       // 重置任务状态为pending，清除worker信息和错误信息
       const [result] = await connection.execute(
         `UPDATE tasks SET 
@@ -218,7 +234,7 @@ class Database {
          WHERE task_id = ? AND status = 'failed'`,
         [taskId]
       );
-      
+
       const updateResult = result as mysql.ResultSetHeader;
       return updateResult.affectedRows > 0;
     } finally {
@@ -227,4 +243,4 @@ class Database {
   }
 }
 
-export const database = new Database(); 
+export const database = new Database();
