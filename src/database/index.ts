@@ -231,7 +231,7 @@ class Database {
          expire_at = NULL, 
          error_message = NULL, 
          updated_at = CURRENT_TIMESTAMP 
-         WHERE task_id = ? AND status = 'failed'`,
+         WHERE task_id = ? AND (status = 'failed' OR status = 'processing')`,
         [taskId]
       );
 
