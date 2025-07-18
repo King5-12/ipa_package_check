@@ -198,23 +198,32 @@ const beforeUpload = (file: File) => {
 
 // 提交任务
 const submitTask = async () => {
-  if (!file1.value || !file2.value) {
-    ElMessage.warning('请选择两个IPA文件');
-    return;
-  }
-  // 校验文件后缀名
-  if (!file1.value.name.toLowerCase().endsWith('.ipa') || !file2.value.name.toLowerCase().endsWith('.ipa')) {
-    ElMessage.warning('请选择IPA文件');
-    return;
-  }
-  // 校验两个文件名需要不一样
-  if (file1.value.name === file2.value.name) {
-    ElMessage.warning('两个文件名不能一样');
-    return;
-  }
-  // 检查文件名是否包含debug
-  if (file1.value.name.toLowerCase().includes('debug') || file2.value.name.toLowerCase().includes('debug')) {
-    ElMessage.warning('请上传Release包,不能上传Debug包');
+  try {
+    if (!file1.value || !file2.value) {
+      ElMessage.warning('请选择两个IPA文件');
+      return;
+    }
+    // 校验文件后缀名
+    if (!file1.value.name.toLowerCase().endsWith('.ipa') || !file2.value.name.toLowerCase().endsWith('.ipa')) {
+      ElMessage.warning('请选择IPA文件');
+      return;
+    }
+    // 校验两个文件名需要不一样
+    if (file1.value.name === file2.value.name) {
+      ElMessage.warning('两个文件名不能一样');
+      return;
+    }
+    if (file1.value.name.toLowerCase().split('release')[0] === file2.value.name.toLowerCase().split('release')[0]) {
+      ElMessage.warning('两个文件名前缀不能一样');
+      return;
+    }
+    // 检查文件名是否包含debug
+    if (file1.value.name.toLowerCase().includes('debug') || file2.value.name.toLowerCase().includes('debug')) {
+      ElMessage.warning('请上传Release包,不能上传Debug包');
+      return;
+    }
+  } catch (error) {
+    ElMessage.error(`任务创建失败: ${String(error || '未知错误')}`);
     return;
   }
 
@@ -233,7 +242,7 @@ const submitTask = async () => {
     fileList1.value = [];
     fileList2.value = [];
   } catch (error) {
-    ElMessage.error(`任务创建失败: ${error.message}`);
+    ElMessage.error(`任务创建失败: ${String(error || '未知错误')}`);
   } finally {
     uploading.value = false;
   }
