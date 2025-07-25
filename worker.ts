@@ -335,10 +335,10 @@ class Worker {
       });
 
       // 设置超时
-      // setTimeout(() => {
-      //   detectionProcess.kill();
-      //   reject(new Error('Detection tool timeout'));
-      // }, 10 * 60 * 1000); // 10分钟超时
+      setTimeout(() => {
+        detectionProcess.kill();
+        reject(new Error('Detection tool timeout'));
+      }, 24 * 60 * 60 * 1000); // 24小时超时
     });
   }
 
