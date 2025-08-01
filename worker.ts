@@ -13,19 +13,9 @@ dotenv.config({ path: envFile });
 import { database } from './src/database';
 import { FileUtils } from './src/utils/fileUtils';
 import { Task, DetectionResult, WorkerConfig } from './src/types';
+import { logger, log, logError, PinoLogger, LogLevel } from './src/utils/pino-logger';
 
-// 日志工具函数
-const getTimestamp = (): string => {
-  return new Date().toISOString().replace('T', ' ').replace('Z', '');
-};
 
-const log = (message: string, ...args: any[]): void => {
-  console.log(`[${getTimestamp()}] ${message}`, ...args);
-};
-
-const logError = (message: string, ...args: any[]): void => {
-  console.error(`[${getTimestamp()}] ${message}`, ...args);
-};
 
 // 获取检测结果基础路径，支持环境变量配置
 const getBasePath = (): string => {
@@ -48,6 +38,8 @@ class Worker {
   private config: WorkerConfig;
   private running = false;
   private activeTasks = new Map<string, boolean>();
+  private processMonitors = new Map<string, NodeJS.Timeout>();
+  private workerLogger: PinoLogger;
 
   constructor() {
     // 获取本地存储的绝对路径
@@ -62,6 +54,15 @@ class Worker {
 
     // 确保本地存储目录存在
     fs.ensureDirSync(this.config.local_storage);
+
+    // 初始化高性能日志系统
+    this.workerLogger = new PinoLogger({
+      level: LogLevel.INFO,
+      maxFileSize: process.env.LOG_MAX_FILE_SIZE || '50m',
+      maxFiles: parseInt(process.env.LOG_MAX_FILES || '10'),
+      workerName: this.config.worker_id,
+      logDir: path.join(process.cwd(), 'logs')
+    });
   }
 
   private getLocalIP(): string {
@@ -83,35 +84,35 @@ class Worker {
     this.running = true;
 
     // 打印启动信息和路径配置
-    log('='.repeat(60));
-    log(`Worker ${this.config.worker_id} starting...`);
-    log(`Worker IP: ${this.config.worker_ip}`);
-    log(`Max concurrent tasks: ${this.config.max_concurrent}`);
-    log('');
-    log('Storage configuration:');
-    log(`  - Local storage (absolute): ${this.config.local_storage}`);
-    log(`  - Detection base path: ${basePath}`);
-    log(`  - Current working directory: ${process.cwd()}`);
+    this.workerLogger.info('='.repeat(60));
+    this.workerLogger.info(`Worker ${this.config.worker_id} starting...`);
+    this.workerLogger.info(`Worker IP: ${this.config.worker_ip}`);
+    this.workerLogger.info(`Max concurrent tasks: ${this.config.max_concurrent}`);
+    this.workerLogger.info('');
+    this.workerLogger.info('Storage configuration:');
+    this.workerLogger.info(`  - Local storage (absolute): ${this.config.local_storage}`);
+    this.workerLogger.info(`  - Detection base path: ${basePath}`);
+    this.workerLogger.info(`  - Current working directory: ${process.cwd()}`);
 
     // 确保本地存储目录存在
     try {
       await FileUtils.ensureDirectoryExists(this.config.local_storage);
-      log('✓ Local storage directory initialized successfully');
+      this.workerLogger.info('✓ Local storage directory initialized successfully');
 
       // 检查检测结果基础路径是否存在
       if (await fs.pathExists(basePath)) {
-        log('✓ Detection base path exists');
+        this.workerLogger.info('✓ Detection base path exists');
       } else {
-        log('⚠ Detection base path does not exist, detection may fail');
-        log(`  Expected path: ${basePath}`);
+        this.workerLogger.warn('⚠ Detection base path does not exist, detection may fail');
+        this.workerLogger.info(`  Expected path: ${basePath}`);
       }
     } catch (error) {
-      logError('✗ Failed to initialize storage directories:', error);
+      this.workerLogger.error('✗ Failed to initialize storage directories:', error);
       throw error;
     }
 
-    log('='.repeat(60));
-    log(`Worker ${this.config.worker_id} started successfully`);
+    this.workerLogger.info('='.repeat(60));
+    this.workerLogger.info(`Worker ${this.config.worker_id} started successfully`);
 
     // 主处理循环
     while (this.running) {
@@ -123,7 +124,7 @@ class Worker {
         // 短暂休息避免CPU占用过高
         await this.sleep(parseInt(process.env.POLLING_INTERVAL_MS || '5000'));
       } catch (error) {
-        logError('Worker error:', error);
+        this.workerLogger.error('Worker error:', error);
         await this.sleep(10000); // 错误时等待更长时间
       }
     }
@@ -131,7 +132,17 @@ class Worker {
 
   stop(): void {
     this.running = false;
-    log(`Worker ${this.config.worker_id} stopping...`);
+    this.workerLogger.info(`Worker ${this.config.worker_id} stopping...`);
+    
+    // 清理所有进程监控定时器
+    for (const [taskId, monitor] of this.processMonitors) {
+      clearInterval(monitor);
+      this.workerLogger.info(`Stopped process monitoring for task: ${taskId}`);
+    }
+    this.processMonitors.clear();
+    
+    // 关闭日志流
+    this.workerLogger.close();
   }
 
   private async processNextTask(): Promise<void> {
@@ -142,7 +153,7 @@ class Worker {
     }
 
     const taskId = task.task_id;
-    log(`Processing task: ${taskId}`);
+    this.workerLogger.info(`Processing task: ${taskId}`);
 
     // 标记任务为活跃状态
     this.activeTasks.set(taskId, true);
@@ -158,7 +169,7 @@ class Worker {
       // 异步处理任务
       this.handleTaskAsync(task);
     } catch (error: any) {
-      logError(`Error processing task ${taskId}:`, error);
+      this.workerLogger.error(`Error processing task ${taskId}:`, error);
       this.activeTasks.delete(taskId);
       await database.updateTaskStatus(taskId, 'failed', error?.message || 'Unknown error');
     }
@@ -177,9 +188,9 @@ class Worker {
       // 更新任务结果
       await database.updateTaskResult(taskId, 'completed', result.similarity_score);
 
-      log(`Task ${taskId} completed with similarity score: ${result.similarity_score}`);
+      this.workerLogger.info(`Task ${taskId} completed with similarity score: ${result.similarity_score}`);
     } catch (error: any) {
-      logError(`Task ${taskId} failed:`, error);
+      this.workerLogger.error(`Task ${taskId} failed:`, error);
       await database.updateTaskStatus(taskId, 'failed', error?.message || 'Unknown error');
     } finally {
       this.activeTasks.delete(taskId);
@@ -197,8 +208,8 @@ class Worker {
     const file1Exists = await this.isFileValid(file1Path, task.file1_hash);
     const file2Exists = await this.isFileValid(file2Path, task.file2_hash);
 
-    log('file1Path', file1Path, task.file1_hash);
-    log('file2Path', file2Path, task.file2_hash);
+    this.workerLogger.info('file1Path', { path: file1Path, hash: task.file1_hash });
+    this.workerLogger.info('file2Path', { path: file2Path, hash: task.file2_hash });
 
     // 请求缺失的文件
     if (!file1Exists) {
@@ -256,7 +267,7 @@ class Worker {
       const file2Valid = await this.isFileValid(file2Path, hash2);
 
       if (file1Valid && file2Valid) {
-        log('All files are ready for processing');
+        this.workerLogger.info('All files are ready for processing');
         return;
       }
 
@@ -278,18 +289,23 @@ class Worker {
       // 构建命令参数
       const args = [task.task_id, file1Path, file2Path];
 
-      log(`Running detection tool: ${toolPath} ${args.join(' ')}`);
+      this.workerLogger.info(`Running detection tool: ${toolPath} ${args.join(' ')}`);
 
-      log('basePath', basePath);
+      this.workerLogger.info('basePath', { basePath });
 
       const commandLine = `&  '${toolPath}' '-u' ${args.map((a) => `'${a.replace(/'/g, "''")}'`).join(' ')}`;
 
-      log('commandLine', commandLine);
+      this.workerLogger.info('commandLine', { commandLine });
 
       const detectionProcess = spawn('powershell.exe', ['-Command', commandLine], {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: basePath,
       });
+
+      // 启动进程监控
+      if (detectionProcess.pid) {
+        this.startProcessMonitoring(task.task_id, detectionProcess.pid);
+      }
 
       // const detectionProcess = spawn(toolPath, args, {
       //   stdio: ['pipe', 'pipe', 'pipe'],
@@ -316,6 +332,9 @@ class Worker {
       });
 
       detectionProcess.on('close', (code) => {
+        // 停止进程监控
+        this.stopProcessMonitoring(task.task_id);
+        
         if (code === 0) {
           try {
             // 解析输出结果
@@ -330,7 +349,10 @@ class Worker {
       });
 
       detectionProcess.on('error', (error: any) => {
-        logError('Detection tool error:', error?.message);
+        // 停止进程监控
+        this.stopProcessMonitoring(task.task_id);
+        
+        this.workerLogger.error('Detection tool error:', error?.message);
         reject(new Error(`Detection tool error: ${error?.message || 'Unknown error'}`));
       });
 
@@ -342,13 +364,158 @@ class Worker {
     });
   }
 
+  private startProcessMonitoring(taskId: string, pid: number): void {
+    // 清除之前的监控定时器（如果存在）
+    const existingMonitor = this.processMonitors.get(taskId);
+    if (existingMonitor) {
+      clearInterval(existingMonitor);
+    }
+
+    // 创建新的监控定时器，每分钟记录一次
+    const monitorInterval = setInterval(async () => {
+      try {
+        // 获取进程信息
+        const processInfo = await this.getProcessInfo(pid);
+        if (processInfo) {
+          this.workerLogger.logProcessMonitor(taskId, pid, processInfo.memory, processInfo.cpu);
+        }
+      } catch (error) {
+        this.workerLogger.error(`Failed to monitor process ${pid} for task ${taskId}:`, error);
+      }
+    }, 60000); // 每分钟执行一次
+
+    // 保存监控定时器引用
+    this.processMonitors.set(taskId, monitorInterval);
+  }
+
+  private stopProcessMonitoring(taskId: string): void {
+    const monitor = this.processMonitors.get(taskId);
+    if (monitor) {
+      clearInterval(monitor);
+      this.processMonitors.delete(taskId);
+    }
+  }
+
+  private async getProcessInfo(pid: number): Promise<{ memory: any; cpu: any } | null> {
+    try {
+      // 使用psutil或系统命令获取进程信息
+      if (os.platform() === 'win32') {
+        return await this.getWindowsProcessInfo(pid);
+      } else {
+        return await this.getUnixProcessInfo(pid);
+      }
+    } catch (error) {
+      this.workerLogger.error(`Failed to get process info for PID ${pid}:`, error);
+      return null;
+    }
+  }
+
+  private async getWindowsProcessInfo(pid: number): Promise<{ memory: any; cpu: any } | null> {
+    return new Promise((resolve) => {
+      const command = `Get-Process -Id ${pid} | Select-Object WorkingSet,CPU | ConvertTo-Json`;
+      const process = spawn('powershell.exe', ['-Command', command], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      let output = '';
+      let errorOutput = '';
+
+      process.stdout.on('data', (data) => {
+        output += data.toString();
+      });
+
+      process.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+      });
+
+      process.on('close', (code) => {
+        if (code === 0 && output.trim()) {
+          try {
+            const result = JSON.parse(output.trim());
+            resolve({
+              memory: {
+                workingSet: result.WorkingSet || 0,
+                workingSetMB: Math.round((result.WorkingSet || 0) / 1024 / 1024 * 100) / 100
+              },
+              cpu: {
+                cpuTime: result.CPU || 0
+              }
+            });
+          } catch (error) {
+            this.workerLogger.error('Failed to parse Windows process info:', error);
+            resolve(null);
+          }
+        } else {
+          this.workerLogger.error('Windows process info command failed:', errorOutput);
+          resolve(null);
+        }
+      });
+    });
+  }
+
+  private async getUnixProcessInfo(pid: number): Promise<{ memory: any; cpu: any } | null> {
+    return new Promise((resolve) => {
+      const command = `ps -p ${pid} -o pid,ppid,pcpu,pmem,rss,vsz`;
+      const process = spawn('sh', ['-c', command], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      let output = '';
+      let errorOutput = '';
+
+      process.stdout.on('data', (data) => {
+        output += data.toString();
+      });
+
+      process.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+      });
+
+      process.on('close', (code) => {
+        if (code === 0 && output.trim()) {
+          try {
+            const lines = output.trim().split('\n');
+            if (lines.length >= 2) {
+              const parts = lines[1].trim().split(/\s+/);
+              if (parts.length >= 6) {
+                const [, , cpuPercent, memPercent, rss, vsz] = parts;
+              resolve({
+                memory: {
+                  rss: parseInt(rss) || 0,
+                  vsz: parseInt(vsz) || 0,
+                  rssMB: Math.round((parseInt(rss) || 0) / 1024 * 100) / 100,
+                  vszMB: Math.round((parseInt(vsz) || 0) / 1024 * 100) / 100,
+                  memPercent: parseFloat(memPercent) || 0
+                },
+                cpu: {
+                  cpuPercent: parseFloat(cpuPercent) || 0
+                }
+              });
+            } else {
+              resolve(null);
+            }
+          } else {
+            resolve(null);
+          }
+                    } catch (error) {
+              this.workerLogger.error('Failed to parse Unix process info:', error);
+              resolve(null);
+            }
+              } else {
+          this.workerLogger.error('Unix process info command failed:', errorOutput);
+          resolve(null);
+        }
+      });
+    });
+  }
+
   private async getResult(taskId: string): Promise<DetectionResult> {
     try {
       // 构建结果文件路径: basePath/result/{taskId}/result.json
       const resultDir = path.join(basePath, 'result', taskId);
       const resultFilePath = path.join(resultDir, 'result.json');
 
-      log(`Reading detection result from: ${resultFilePath}`);
+      this.workerLogger.info(`Reading detection result from: ${resultFilePath}`);
 
       // 检查结果文件是否存在
       if (!(await fs.pathExists(resultFilePath))) {
@@ -359,7 +526,7 @@ class Worker {
       const resultContent = await fs.readFile(resultFilePath, 'utf-8');
       const result = JSON.parse(resultContent);
 
-      log(`Detection result read successfully:`, result);
+      this.workerLogger.info(`Detection result read successfully:`, result);
 
       // 验证结果格式
       if (typeof result.sim !== 'number') {
@@ -376,11 +543,11 @@ class Worker {
         detectionResult.details = result.details;
       }
 
-      log(`Converted detection result:`, detectionResult);
+      this.workerLogger.info(`Converted detection result:`, detectionResult);
 
       return detectionResult;
     } catch (error: any) {
-      logError(`Failed to read detection result for task ${taskId}:`, error);
+      this.workerLogger.error(`Failed to read detection result for task ${taskId}:`, error);
       throw new Error(`Detection failed: ${error?.message || 'Unknown error'}`);
     }
   }
@@ -408,10 +575,10 @@ class Worker {
       }
 
       // 默认返回随机相似度用于测试
-      log('Could not parse detection output, using random score for testing');
+      this.workerLogger.info('Could not parse detection output, using random score for testing');
       return { similarity_score: Math.random() };
     } catch (error) {
-      logError('Error parsing detection output:', error);
+      this.workerLogger.error('Error parsing detection output:', error);
       throw new Error('Invalid detection output format');
     }
   }
@@ -425,13 +592,13 @@ class Worker {
 const worker = new Worker();
 
 process.on('SIGINT', () => {
-  log('Received SIGINT, shutting down gracefully...');
+  console.log('Received SIGINT, shutting down gracefully...');
   worker.stop();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-  log('Received SIGTERM, shutting down gracefully...');
+  console.log('Received SIGTERM, shutting down gracefully...');
   worker.stop();
   process.exit(0);
 });
@@ -439,7 +606,7 @@ process.on('SIGTERM', () => {
 // 启动Worker
 if (require.main === module) {
   worker.start().catch((error) => {
-    logError('Worker startup error:', error);
+    console.error('Worker startup error:', error);
     process.exit(1);
   });
 }
