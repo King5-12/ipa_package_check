@@ -133,12 +133,20 @@ export class PinoLogger {
     if (level < this.config.level!) return;
 
     const timestamp = new Date().toISOString();
-    const logEntry = {
-      time: timestamp,
+    
+    // 创建与pino格式兼容的日志条目
+    const logEntry: any = {
       level: this.getLevelString(level),
+      time: timestamp,
       msg: message,
-      ...(obj && { data: obj })
+      pid: process.pid,
+      hostname: os.hostname()
     };
+
+    // 如果有对象数据，将其合并到日志条目中
+    if (obj) {
+      Object.assign(logEntry, obj);
+    }
 
     // 控制台输出
     const consoleMsg = `[${timestamp}] ${this.getLevelString(level).toUpperCase()}: ${message}`;
@@ -245,7 +253,11 @@ export class PinoLogger {
 
   info(message: string, obj?: any): void {
     if (this.logger && typeof this.logger.info === 'function') {
-      this.logger.info(message, obj);
+      if (obj) {
+        this.logger.info(obj, message);
+      } else {
+        this.logger.info(message);
+      }
     } else {
       this.log(LogLevel.INFO, message, obj);
     }
@@ -261,7 +273,11 @@ export class PinoLogger {
 
   error(message: string, obj?: any): void {
     if (this.logger && typeof this.logger.error === 'function') {
-      this.logger.error(message, obj);
+      if (obj) {
+        this.logger.error(obj, message);
+      } else {
+        this.logger.error(message);
+      }
     } else {
       this.log(LogLevel.ERROR, message, obj);
     }
