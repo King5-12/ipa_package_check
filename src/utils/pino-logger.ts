@@ -143,9 +143,9 @@ export class PinoLogger {
     // 控制台输出
     const consoleMsg = `[${timestamp}] ${this.getLevelString(level).toUpperCase()}: ${message}`;
     if (level >= LogLevel.ERROR) {
-      console.error(consoleMsg, obj || '');
+      console.error(consoleMsg, obj ? JSON.stringify(obj, null, 2) : '');
     } else {
-      console.log(consoleMsg, obj || '');
+      console.log(consoleMsg, obj ? JSON.stringify(obj, null, 2) : '');
     }
 
     // 文件输出（轻量级实现）
@@ -228,27 +228,51 @@ export class PinoLogger {
 
   // 公共API
   trace(message: string, obj?: any): void {
-    this.logger.trace(message, obj);
+    if (this.logger && typeof this.logger.trace === 'function') {
+      this.logger.trace(message, obj);
+    } else {
+      this.log(LogLevel.TRACE, message, obj);
+    }
   }
 
   debug(message: string, obj?: any): void {
-    this.logger.debug(message, obj);
+    if (this.logger && typeof this.logger.debug === 'function') {
+      this.logger.debug(message, obj);
+    } else {
+      this.log(LogLevel.DEBUG, message, obj);
+    }
   }
 
   info(message: string, obj?: any): void {
-    this.logger.info(message, obj);
+    if (this.logger && typeof this.logger.info === 'function') {
+      this.logger.info(message, obj);
+    } else {
+      this.log(LogLevel.INFO, message, obj);
+    }
   }
 
   warn(message: string, obj?: any): void {
-    this.logger.warn(message, obj);
+    if (this.logger && typeof this.logger.warn === 'function') {
+      this.logger.warn(message, obj);
+    } else {
+      this.log(LogLevel.WARN, message, obj);
+    }
   }
 
   error(message: string, obj?: any): void {
-    this.logger.error(message, obj);
+    if (this.logger && typeof this.logger.error === 'function') {
+      this.logger.error(message, obj);
+    } else {
+      this.log(LogLevel.ERROR, message, obj);
+    }
   }
 
   fatal(message: string, obj?: any): void {
-    this.logger.fatal(message, obj);
+    if (this.logger && typeof this.logger.fatal === 'function') {
+      this.logger.fatal(message, obj);
+    } else {
+      this.log(LogLevel.FATAL, message, obj);
+    }
   }
 
   // 进程监控日志
@@ -271,21 +295,21 @@ export class PinoLogger {
 }
 
 // 创建默认日志实例
-export const logger = new PinoLogger();
+// export const logger = new PinoLogger();
 
-// 便捷函数
-export const log = (message: string, obj?: any): void => {
-  logger.info(message, obj);
-};
+// // 便捷函数
+// export const log = (message: string, obj?: any): void => {
+//   logger.info(message, obj);
+// };
 
-export const logError = (message: string, obj?: any): void => {
-  logger.error(message, obj);
-};
+// export const logError = (message: string, obj?: any): void => {
+//   logger.error(message, obj);
+// };
 
-export const logWarn = (message: string, obj?: any): void => {
-  logger.warn(message, obj);
-};
+// export const logWarn = (message: string, obj?: any): void => {
+//   logger.warn(message, obj);
+// };
 
-export const logDebug = (message: string, obj?: any): void => {
-  logger.debug(message, obj);
-}; 
+// export const logDebug = (message: string, obj?: any): void => {
+//   logger.debug(message, obj);
+// }; 

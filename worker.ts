@@ -13,9 +13,8 @@ dotenv.config({ path: envFile });
 import { database } from './src/database';
 import { FileUtils } from './src/utils/fileUtils';
 import { Task, DetectionResult, WorkerConfig } from './src/types';
-import { logger, log, logError, PinoLogger, LogLevel } from './src/utils/pino-logger';
-
-
+import { PinoLogger, LogLevel } from './src/utils/pino-logger';
+import { systemMonitor } from './src/utils/system-monitor';
 
 // 获取检测结果基础路径，支持环境变量配置
 const getBasePath = (): string => {
@@ -38,7 +37,7 @@ class Worker {
   private config: WorkerConfig;
   private running = false;
   private activeTasks = new Map<string, boolean>();
-  private processMonitors = new Map<string, NodeJS.Timeout>();
+  private systemMonitorInterval: NodeJS.Timeout | null = null;
   private workerLogger: PinoLogger;
 
   constructor() {
@@ -61,7 +60,7 @@ class Worker {
       maxFileSize: process.env.LOG_MAX_FILE_SIZE || '50m',
       maxFiles: parseInt(process.env.LOG_MAX_FILES || '10'),
       workerName: this.config.worker_id,
-      logDir: path.join(process.cwd(), 'logs')
+      logDir: path.join(process.cwd(), 'logs'),
     });
   }
 
@@ -114,6 +113,9 @@ class Worker {
     this.workerLogger.info('='.repeat(60));
     this.workerLogger.info(`Worker ${this.config.worker_id} started successfully`);
 
+    // 启动系统监控
+    this.startSystemMonitoring();
+
     // 主处理循环
     while (this.running) {
       try {
@@ -133,14 +135,13 @@ class Worker {
   stop(): void {
     this.running = false;
     this.workerLogger.info(`Worker ${this.config.worker_id} stopping...`);
-    
-    // 清理所有进程监控定时器
-    for (const [taskId, monitor] of this.processMonitors) {
-      clearInterval(monitor);
-      this.workerLogger.info(`Stopped process monitoring for task: ${taskId}`);
+
+    // 停止系统监控
+    if (this.systemMonitorInterval) {
+      clearInterval(this.systemMonitorInterval);
+      this.workerLogger.info('System monitoring stopped');
     }
-    this.processMonitors.clear();
-    
+
     // 关闭日志流
     this.workerLogger.close();
   }
@@ -302,10 +303,7 @@ class Worker {
         cwd: basePath,
       });
 
-      // 启动进程监控
-      if (detectionProcess.pid) {
-        this.startProcessMonitoring(task.task_id, detectionProcess.pid);
-      }
+      // 系统监控已在启动时开始
 
       // const detectionProcess = spawn(toolPath, args, {
       //   stdio: ['pipe', 'pipe', 'pipe'],
@@ -332,9 +330,6 @@ class Worker {
       });
 
       detectionProcess.on('close', (code) => {
-        // 停止进程监控
-        this.stopProcessMonitoring(task.task_id);
-        
         if (code === 0) {
           try {
             // 解析输出结果
@@ -349,9 +344,6 @@ class Worker {
       });
 
       detectionProcess.on('error', (error: any) => {
-        // 停止进程监控
-        this.stopProcessMonitoring(task.task_id);
-        
         this.workerLogger.error('Detection tool error:', error?.message);
         reject(new Error(`Detection tool error: ${error?.message || 'Unknown error'}`));
       });
@@ -364,149 +356,32 @@ class Worker {
     });
   }
 
-  private startProcessMonitoring(taskId: string, pid: number): void {
-    // 清除之前的监控定时器（如果存在）
-    const existingMonitor = this.processMonitors.get(taskId);
-    if (existingMonitor) {
-      clearInterval(existingMonitor);
-    }
-
-    // 创建新的监控定时器，每分钟记录一次
-    const monitorInterval = setInterval(async () => {
+  private startSystemMonitoring(): void {
+    // 启动系统监控，每分钟记录一次
+    this.systemMonitorInterval = setInterval(() => {
       try {
-        // 获取进程信息
-        const processInfo = await this.getProcessInfo(pid);
-        if (processInfo) {
-          this.workerLogger.logProcessMonitor(taskId, pid, processInfo.memory, processInfo.cpu);
-        }
+        const metrics = systemMonitor.getSystemMetrics();
+        this.workerLogger.info('System metrics', {
+          type: 'system_monitor',
+          timestamp: metrics.timestamp,
+          memory: {
+            total: systemMonitor.formatBytes(metrics.memory.total),
+            used: systemMonitor.formatBytes(metrics.memory.used),
+            free: systemMonitor.formatBytes(metrics.memory.free),
+            usagePercent: metrics.memory.usagePercent,
+          },
+          cpu: {
+            usagePercent: metrics.cpu.usagePercent,
+            loadAverage: metrics.cpu.loadAverage,
+          },
+          uptime: Math.round(metrics.uptime / 60), // 转换为分钟
+        });
       } catch (error) {
-        this.workerLogger.error(`Failed to monitor process ${pid} for task ${taskId}:`, error);
+        this.workerLogger.error('Failed to get system metrics:', error);
       }
     }, 60000); // 每分钟执行一次
 
-    // 保存监控定时器引用
-    this.processMonitors.set(taskId, monitorInterval);
-  }
-
-  private stopProcessMonitoring(taskId: string): void {
-    const monitor = this.processMonitors.get(taskId);
-    if (monitor) {
-      clearInterval(monitor);
-      this.processMonitors.delete(taskId);
-    }
-  }
-
-  private async getProcessInfo(pid: number): Promise<{ memory: any; cpu: any } | null> {
-    try {
-      // 使用psutil或系统命令获取进程信息
-      if (os.platform() === 'win32') {
-        return await this.getWindowsProcessInfo(pid);
-      } else {
-        return await this.getUnixProcessInfo(pid);
-      }
-    } catch (error) {
-      this.workerLogger.error(`Failed to get process info for PID ${pid}:`, error);
-      return null;
-    }
-  }
-
-  private async getWindowsProcessInfo(pid: number): Promise<{ memory: any; cpu: any } | null> {
-    return new Promise((resolve) => {
-      const command = `Get-Process -Id ${pid} | Select-Object WorkingSet,CPU | ConvertTo-Json`;
-      const process = spawn('powershell.exe', ['-Command', command], {
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
-
-      let output = '';
-      let errorOutput = '';
-
-      process.stdout.on('data', (data) => {
-        output += data.toString();
-      });
-
-      process.stderr.on('data', (data) => {
-        errorOutput += data.toString();
-      });
-
-      process.on('close', (code) => {
-        if (code === 0 && output.trim()) {
-          try {
-            const result = JSON.parse(output.trim());
-            resolve({
-              memory: {
-                workingSet: result.WorkingSet || 0,
-                workingSetMB: Math.round((result.WorkingSet || 0) / 1024 / 1024 * 100) / 100
-              },
-              cpu: {
-                cpuTime: result.CPU || 0
-              }
-            });
-          } catch (error) {
-            this.workerLogger.error('Failed to parse Windows process info:', error);
-            resolve(null);
-          }
-        } else {
-          this.workerLogger.error('Windows process info command failed:', errorOutput);
-          resolve(null);
-        }
-      });
-    });
-  }
-
-  private async getUnixProcessInfo(pid: number): Promise<{ memory: any; cpu: any } | null> {
-    return new Promise((resolve) => {
-      const command = `ps -p ${pid} -o pid,ppid,pcpu,pmem,rss,vsz`;
-      const process = spawn('sh', ['-c', command], {
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
-
-      let output = '';
-      let errorOutput = '';
-
-      process.stdout.on('data', (data) => {
-        output += data.toString();
-      });
-
-      process.stderr.on('data', (data) => {
-        errorOutput += data.toString();
-      });
-
-      process.on('close', (code) => {
-        if (code === 0 && output.trim()) {
-          try {
-            const lines = output.trim().split('\n');
-            if (lines.length >= 2) {
-              const parts = lines[1].trim().split(/\s+/);
-              if (parts.length >= 6) {
-                const [, , cpuPercent, memPercent, rss, vsz] = parts;
-              resolve({
-                memory: {
-                  rss: parseInt(rss) || 0,
-                  vsz: parseInt(vsz) || 0,
-                  rssMB: Math.round((parseInt(rss) || 0) / 1024 * 100) / 100,
-                  vszMB: Math.round((parseInt(vsz) || 0) / 1024 * 100) / 100,
-                  memPercent: parseFloat(memPercent) || 0
-                },
-                cpu: {
-                  cpuPercent: parseFloat(cpuPercent) || 0
-                }
-              });
-            } else {
-              resolve(null);
-            }
-          } else {
-            resolve(null);
-          }
-                    } catch (error) {
-              this.workerLogger.error('Failed to parse Unix process info:', error);
-              resolve(null);
-            }
-              } else {
-          this.workerLogger.error('Unix process info command failed:', errorOutput);
-          resolve(null);
-        }
-      });
-    });
+    this.workerLogger.info('System monitoring started');
   }
 
   private async getResult(taskId: string): Promise<DetectionResult> {
