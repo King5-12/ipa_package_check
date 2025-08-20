@@ -42,6 +42,21 @@ export class PinoLogger {
   private logDir: string;
   private workerName: string;
 
+  // 北京时间格式化工具
+  private formatBeijingTime(timestamp?: number): string {
+    const date = timestamp ? new Date(timestamp) : new Date();
+    return date.toLocaleString('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+  }
+
   constructor(config: LoggerConfig = {}) {
     this.config = {
       level: LogLevel.INFO,
@@ -132,12 +147,16 @@ export class PinoLogger {
   private log(level: LogLevel, message: string, obj?: any): void {
     if (level < this.config.level!) return;
 
-    const timestamp = new Date().toISOString();
+    const now = Date.now();
+    const timestamp = new Date(now).toISOString();
+    const beijingTime = this.formatBeijingTime(now);
     
     // 创建与pino格式兼容的日志条目
     const logEntry: any = {
       level: this.getLevelString(level),
-      time: timestamp,
+      time: now,
+      timestamp: timestamp,
+      beijingTime: beijingTime,
       msg: message,
       pid: process.pid,
       hostname: os.hostname()
@@ -148,8 +167,8 @@ export class PinoLogger {
       Object.assign(logEntry, obj);
     }
 
-    // 控制台输出
-    const consoleMsg = `[${timestamp}] ${this.getLevelString(level).toUpperCase()}: ${message}`;
+    // 控制台输出使用北京时间
+    const consoleMsg = `[${beijingTime}] ${this.getLevelString(level).toUpperCase()}: ${message}`;
     if (level >= LogLevel.ERROR) {
       console.error(consoleMsg, obj ? JSON.stringify(obj, null, 2) : '');
     } else {

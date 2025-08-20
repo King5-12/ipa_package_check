@@ -37,8 +37,24 @@ class Worker {
   private config: WorkerConfig;
   private running = false;
   private activeTasks = new Map<string, boolean>();
+  private activeProcesses = new Map<string, { process: any; timeoutId: NodeJS.Timeout }>();
   private systemMonitorInterval: NodeJS.Timeout | null = null;
   private workerLogger: PinoLogger;
+
+  // 北京时间格式化工具
+  private formatBeijingTime(timestamp?: number): string {
+    const date = timestamp ? new Date(timestamp) : new Date();
+    return date.toLocaleString('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+  }
 
   constructor() {
     // 获取本地存储的绝对路径
@@ -142,6 +158,16 @@ class Worker {
       this.workerLogger.info('System monitoring stopped');
     }
 
+    // 清理所有活跃的进程
+    this.workerLogger.info(`Cleaning up ${this.activeProcesses.size} active processes...`);
+    for (const [taskId, processInfo] of this.activeProcesses.entries()) {
+      this.workerLogger.info(`Stopping process for task: ${taskId}`);
+      clearTimeout(processInfo.timeoutId);
+      this.forceKillProcess(processInfo.process);
+    }
+    this.activeProcesses.clear();
+    this.activeTasks.clear();
+
     // 关闭日志流
     this.workerLogger.close();
   }
@@ -194,7 +220,31 @@ class Worker {
       this.workerLogger.error(`Task ${taskId} failed:`, error);
       await database.updateTaskStatus(taskId, 'failed', error?.message || 'Unknown error');
     } finally {
-      this.activeTasks.delete(taskId);
+      // 清理任务状态和进程
+      this.cleanupTask(taskId);
+    }
+  }
+
+  private cleanupTask(taskId: string): void {
+    // 从活跃任务中移除
+    this.activeTasks.delete(taskId);
+    
+    // 清理关联的进程和定时器
+    const processInfo = this.activeProcesses.get(taskId);
+    if (processInfo) {
+      // 清除超时定时器
+      clearTimeout(processInfo.timeoutId);
+      
+      // 强制杀死进程（如果还在运行）
+      try {
+        if (processInfo.process && !processInfo.process.killed) {
+          this.forceKillProcess(processInfo.process);
+        }
+      } catch (error) {
+        this.workerLogger.warn(`Error killing process for task ${taskId}:`, error);
+      }
+      
+      this.activeProcesses.delete(taskId);
     }
   }
 
@@ -303,57 +353,92 @@ class Worker {
         cwd: basePath,
       });
 
-      // 系统监控已在启动时开始
-
-      // const detectionProcess = spawn(toolPath, args, {
-      //   stdio: ['pipe', 'pipe', 'pipe'],
-      //   cwd: basePath,
-      // });
-
       let output = '';
       let errorOutput = '';
+      let isResolved = false;
+
+      // 设置24小时超时
+      const timeoutId = setTimeout(() => {
+        if (!isResolved) {
+          this.workerLogger.warn(`Task ${task.task_id} timeout after 50 hours, force killing process`);
+          this.forceKillProcess(detectionProcess);
+          isResolved = true;
+          reject(new Error('Detection tool timeout after 50 hours'));
+        }
+      }, 50 * 60 * 60 * 1000);
+
+      // 保存进程信息用于管理
+      this.activeProcesses.set(task.task_id, {
+        process: detectionProcess,
+        timeoutId: timeoutId
+      });
 
       detectionProcess.stdout.on('data', (data) => {
         const utfData = iconv.decode(data, 'gbk');
         const str = utfData.toString();
-        const now = new Date().toLocaleString();
-        process.stdout.write(`[${now}] ${str}`);
+        const beijingTime = this.formatBeijingTime();
+        process.stdout.write(`[${beijingTime}] ${str}`);
         output += str;
       });
 
       detectionProcess.stderr.on('data', (data) => {
         const utfData = iconv.decode(data, 'gbk');
         const str = utfData.toString();
-        const now = new Date().toLocaleString();
-        process.stderr.write(`[${now}] ${str}`);
+        const beijingTime = this.formatBeijingTime();
+        process.stderr.write(`[${beijingTime}] ${str}`);
         errorOutput += str;
       });
 
       detectionProcess.on('close', (code) => {
-        if (code === 0) {
-          try {
-            // 解析输出结果
-            const result = this.getResult(task.task_id);
-            resolve(result);
-          } catch (parseError: any) {
-            reject(new Error(`Failed to parse detection output: ${parseError?.message || 'Unknown error'}`));
+        if (!isResolved) {
+          clearTimeout(timeoutId);
+          isResolved = true;
+          
+          if (code === 0) {
+            try {
+              // 解析输出结果
+              const result = this.getResult(task.task_id);
+              resolve(result);
+            } catch (parseError: any) {
+              reject(new Error(`Failed to parse detection output: ${parseError?.message || 'Unknown error'}`));
+            }
+          } else {
+            reject(new Error(`Detection tool failed with code ${code}: ${errorOutput}`));
           }
-        } else {
-          reject(new Error(`Detection tool failed with code ${code}: ${errorOutput}`));
         }
       });
 
       detectionProcess.on('error', (error: any) => {
-        this.workerLogger.error('Detection tool error:', error?.message);
-        reject(new Error(`Detection tool error: ${error?.message || 'Unknown error'}`));
+        if (!isResolved) {
+          clearTimeout(timeoutId);
+          isResolved = true;
+          this.workerLogger.error('Detection tool error:', error?.message);
+          reject(new Error(`Detection tool error: ${error?.message || 'Unknown error'}`));
+        }
       });
-
-      // 设置超时
-      setTimeout(() => {
-        detectionProcess.kill();
-        reject(new Error('Detection tool timeout'));
-      }, 24 * 60 * 60 * 1000); // 24小时超时
     });
+  }
+
+  private forceKillProcess(childProcess: any): void {
+    if (!childProcess || childProcess.killed) {
+      return;
+    }
+
+    try {
+      if (os.platform() === 'win32') {
+        // Windows: 使用taskkill强制终止进程树
+        spawn('taskkill', ['/pid', childProcess.pid.toString(), '/T', '/F'], {
+          stdio: 'ignore'
+        });
+        this.workerLogger.info(`Force killed Windows process tree for PID: ${childProcess.pid}`);
+      } else {
+        // Unix-like: 发送SIGKILL信号
+        childProcess.kill('SIGKILL');
+        this.workerLogger.info(`Force killed Unix process for PID: ${childProcess.pid}`);
+      }
+    } catch (error) {
+      this.workerLogger.error('Error force killing process:', error);
+    }
   }
 
   private startSystemMonitoring(): void {
@@ -361,9 +446,9 @@ class Worker {
     this.systemMonitorInterval = setInterval(() => {
       try {
         const metrics = systemMonitor.getSystemMetrics();
+        
         this.workerLogger.info('System metrics', {
           type: 'system_monitor',
-          timestamp: metrics.timestamp,
           memory: {
             total: systemMonitor.formatBytes(metrics.memory.total),
             used: systemMonitor.formatBytes(metrics.memory.used),
