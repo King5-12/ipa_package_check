@@ -88,37 +88,148 @@ export class PinoLogger {
 
   private initPinoLogger(): void {
     try {
-      // 尝试使用 pino-rotate-file
-      const transport = pinoRotate({
-        file: path.join(this.logDir, `${this.workerName}-%Y-%m-%d.log`),
-        size: this.config.maxFileSize,
-        interval: '1d',
-        maxFiles: this.config.maxFiles,
-        teeToStdout: true
-      });
+      // 创建自定义transport，同时输出到文件和控制台
+      const transports = [];
 
-      this.logger = pino({
-        level: this.getLevelString(this.config.level!),
-        transport: {
+      // 文件transport
+      try {
+        const fileTransport = pinoRotate({
+          file: path.join(this.logDir, `${this.workerName}-%Y-%m-%d.log`),
+          size: this.config.maxFileSize,
+          interval: '1d',
+          maxFiles: this.config.maxFiles,
+          teeToStdout: false
+        });
+        
+        transports.push({
           target: 'pino/file',
           options: {
-            destination: transport
+            destination: fileTransport
           }
-        }
-      });
-    } catch (error) {
-      // 如果 pino-rotate-file 不可用，使用基础的 pino
-      this.logger = pino({
-        level: this.getLevelString(this.config.level!),
-        transport: {
+        });
+      } catch (rotateError) {
+        // 如果rotate不可用，使用基础文件输出
+        transports.push({
           target: 'pino/file',
           options: {
             destination: path.join(this.logDir, `${this.workerName}-${new Date().toISOString().split('T')[0]}.log`)
           }
+        });
+      }
+
+      // 控制台transport - 使用自定义格式
+      transports.push({
+        target: 'pino-pretty',
+        options: {
+          destination: 1, // stdout
+          colorize: true,
+          translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
+          ignore: 'pid,hostname'
         }
       });
+
+      this.logger = pino({
+        level: this.getLevelString(this.config.level!),
+        timestamp: () => `,"time":${Date.now()},"beijingTime":"${this.formatBeijingTime()}"`,
+        transport: {
+          targets: transports
+        }
+      });
+
+    } catch (error) {
+      // 完全回退到简单配置
+      console.log('Pino transport setup failed, using simple configuration:', error);
+      
+      this.logger = pino({
+        level: this.getLevelString(this.config.level!),
+        timestamp: () => `,"time":${Date.now()},"beijingTime":"${this.formatBeijingTime()}"`,
+        transport: {
+          target: 'pino-pretty',
+          options: {
+            destination: 1,
+            colorize: true,
+            translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
+            ignore: 'pid,hostname'
+          }
+        }
+      });
+
+      // 同时写入文件
+      this.setupFileLogging();
     }
   }
+
+  private setupFileLogging(): void {
+    const originalLog = this.logger.info.bind(this.logger);
+    const originalWarn = this.logger.warn.bind(this.logger);
+    const originalError = this.logger.error.bind(this.logger);
+    const originalDebug = this.logger.debug.bind(this.logger);
+
+    const writeToFile = (level: string, message: string, obj?: any) => {
+      try {
+        const logEntry = {
+          level,
+          time: Date.now(),
+          beijingTime: this.formatBeijingTime(),
+          msg: message,
+          pid: process.pid,
+          hostname: os.hostname(),
+          ...obj
+        };
+        
+        const today = new Date().toISOString().split('T')[0];
+        const logFile = path.join(this.logDir, `${this.workerName}-${today}.log`);
+        fs.appendFileSync(logFile, JSON.stringify(logEntry) + '\n');
+      } catch (error) {
+        // 忽略文件写入错误
+      }
+    };
+
+    this.logger.info = (obj: any, msg?: string) => {
+      const message = msg || (typeof obj === 'string' ? obj : '');
+      const data = msg ? obj : undefined;
+      writeToFile('info', message, data);
+      if (msg) {
+        originalLog(obj, msg);
+      } else {
+        originalLog(message);
+      }
+    };
+
+    this.logger.warn = (obj: any, msg?: string) => {
+      const message = msg || (typeof obj === 'string' ? obj : '');
+      const data = msg ? obj : undefined;
+      writeToFile('warn', message, data);
+      if (msg) {
+        originalWarn(obj, msg);
+      } else {
+        originalWarn(message);
+      }
+    };
+
+    this.logger.error = (obj: any, msg?: string) => {
+      const message = msg || (typeof obj === 'string' ? obj : '');
+      const data = msg ? obj : undefined;
+      writeToFile('error', message, data);
+      if (msg) {
+        originalError(obj, msg);
+      } else {
+        originalError(message);
+      }
+    };
+
+    this.logger.debug = (obj: any, msg?: string) => {
+      const message = msg || (typeof obj === 'string' ? obj : '');
+      const data = msg ? obj : undefined;
+      writeToFile('debug', message, data);
+      if (msg) {
+        originalDebug(obj, msg);
+      } else {
+        originalDebug(message);
+      }
+    };
+  }
+
 
   private initFallbackLogger(): void {
     // 轻量级实现，模拟 pino 的 API
