@@ -365,7 +365,7 @@ class Worker {
           isResolved = true;
           reject(new Error('Detection tool timeout after 50 hours'));
         }
-      }, 50 * 60 * 60 * 1000);
+      }, 72 * 60 * 60 * 1000);
 
       // 保存进程信息用于管理
       this.activeProcesses.set(task.task_id, {
